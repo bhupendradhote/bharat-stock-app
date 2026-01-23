@@ -1,0 +1,20 @@
+export const API_ENDPOINTS = {
+  AUTH: {
+    LOGIN: '/auth/login', 
+    REGISTER: '/auth/register/details', 
+    SEND_OTP: '/auth/register/phone', 
+    VERIFY_OTP: '/auth/register/verify-otp', 
+
+    VERIFY_EMAIL: '/auth/verify-email',
+
+    LOGOUT: '/auth/logout',
+    PROFILE: '/user',
+  },
+  USER: {
+    PROFILE: '/user/profile',
+    UPDATE_PROFILE: '/user/update',
+  },
+  MARKET: {
+    STOCKS: '/market/stocks',
+  }
+};
