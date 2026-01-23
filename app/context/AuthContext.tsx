@@ -46,7 +46,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserToken(token); // ⚡ Updates Global State -> Triggers Redirect
   };
 
-  // Call this when user logs out
   const signOut = async () => {
     await storage.clearAll();
     setUserToken(null); // ⚡ Updates Global State -> Triggers Redirect

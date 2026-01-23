@@ -10,11 +10,18 @@ export const API_ENDPOINTS = {
     LOGOUT: '/auth/logout',
     PROFILE: '/user',
   },
-  USER: {
-    PROFILE: '/user/profile',
-    UPDATE_PROFILE: '/user/update',
-  },
-  MARKET: {
-    STOCKS: '/market/stocks',
-  }
+    USER: {
+      PROFILE: '/user/profile',
+      UPDATE_PROFILE: '/user/update',
+    },
+    MARKET: {
+      STOCKS: '/market/stocks',
+    },
+    SERVICE_PLANS: {
+      LIST: '/service-plans',                
+      DETAILS: (id: number | string) => `/service-plans/${id}`, 
+    },
+    CUSTOMER_PROFILE: {
+      GET_PROFILE: '/customer/profile',  
+    }
 };

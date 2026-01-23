@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -8,156 +8,223 @@ import {
   TouchableOpacity,
   Platform,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
+import pricingServices from '@/services/api/methods/pricingServices'; // adjust alias/path if needed
 
-// --- Types ---
-interface PlanFeature {
-  label: string;
-  value: boolean | string; // true=check, false=cross, string=text value
+interface ApiFeature {
+  id?: number | string;
+  svg_icon?: string | null;
+  text?: string | null;
 }
 
-interface PricingPlan {
+interface ApiDuration {
+  id?: number | string;
+  duration: string; // e.g. "3 Months"
+  price: number | string;
+  features?: ApiFeature[];
+}
+
+// Backend service plan
+interface ApiServicePlan {
+  id: number | string;
+  name: string;
+  tagline?: string | null;
+  featured?: number | boolean;
+  status?: number | boolean;
+  sort_order?: number;
+  button_text?: string | null;
+  durations?: ApiDuration[];
+}
+
+interface UIPricingDuration {
+  label: string;
+  price: number | string;
+  priceText: string;
+  features: ApiFeature[];
+}
+
+interface UIPricingPlan {
   id: string;
   title: string;
-  price: string;
-  subtitle: string;
+  subtitle?: string;
   isRecommended?: boolean;
-  features: PlanFeature[];
+  buttonText?: string;
+  durations: UIPricingDuration[];
 }
 
-// --- Mock Data ---
-const plans: PricingPlan[] = [
-  {
-    id: 'basic',
-    title: 'Basic / Intraday',
-    price: '₹5000',
-    subtitle: 'inclusive of GST',
-    features: [
-      { label: 'Intraday Recommendations', value: true },
-      { label: 'Short-Term/Medium-Term', value: false },
-      { label: 'Options & Futures', value: false },
-      { label: 'Commodity Tips', value: false },
-      { label: 'Customer Support Priority', value: 'Standard' },
-    ],
-  },
-  {
-    id: 'standard',
-    title: 'Standard',
-    price: '₹15000',
-    subtitle: 'inclusive of GST',
-    isRecommended: true,
-    features: [
-      { label: 'Intraday Recommendations', value: true },
-      { label: 'Short-Term/Medium-Term', value: true },
-      { label: 'Options & Futures', value: false },
-      { label: 'Commodity Tips', value: 'Optional' },
-      { label: 'Customer Support Priority', value: 'Priority' },
-    ],
-  },
-  {
-    id: 'premium',
-    title: 'Premium',
-    price: '₹25000',
-    subtitle: 'inclusive of GST',
-    features: [
-      { label: 'Intraday Recommendations', value: true },
-      { label: 'Short-Term/Medium-Term', value: true },
-      { label: 'Options & Futures', value: true },
-      { label: 'Commodity Tips', value: true },
-      { label: 'Customer Support Priority', value: 'Premium' },
-    ],
-  },
-];
-
-const PlanCard = ({ plan }: { plan: PricingPlan }) => {
-  const [selectedDuration, setSelectedDuration] = useState('3 Months');
-  const durations = ['3 Months', '6 Months', '1 Year'];
+const PlanCard = ({ plan }: { plan: UIPricingPlan }) => {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const durations = plan.durations ?? [];
+  const activeDuration = durations[selectedIndex] ?? (durations[0] ?? null);
 
   return (
     <View style={styles.cardContainer}>
-      {/* Recommended Banner */}
       {plan.isRecommended && (
         <View style={styles.recommendedBanner}>
           <Text style={styles.recommendedText}>Recommended Plan</Text>
         </View>
       )}
 
-      <View style={[
-        styles.card, 
-        plan.isRecommended && styles.cardRecommended // Adjust border radius if needed
-      ]}>
-        
-        {/* Title */}
+      <View
+        style={[
+          styles.card,
+          plan.isRecommended && styles.cardRecommended, // same look as before
+        ]}
+      >
         <Text style={styles.planTitle}>{plan.title}</Text>
-        
-        {/* Price Section */}
-        <Text style={styles.priceText}>
-          {plan.price} <Text style={styles.priceSubText}>({plan.subtitle})</Text>
-        </Text>
-        <Text style={styles.subscriptionLabel}>Monthly Subscription based</Text>
 
+        <Text style={styles.priceText}>
+          {activeDuration ? activeDuration.priceText : '—'}{' '}
+        </Text>
+        <Text style={styles.priceSubText}>({plan.subtitle ?? ''})</Text>
         {/* Duration Toggles */}
         <View style={styles.durationContainer}>
-          {durations.map((d) => {
-            const isActive = selectedDuration === d;
+          {durations.map((d, idx) => {
+            const isActive = selectedIndex === idx;
             return (
               <TouchableOpacity
-                key={d}
+                key={`${plan.id}-dur-${idx}`}
                 activeOpacity={0.8}
-                onPress={() => setSelectedDuration(d)}
+                onPress={() => setSelectedIndex(idx)}
                 style={[
                   styles.durationBtn,
-                  isActive ? styles.durationBtnActive : styles.durationBtnInactive
+                  isActive ? styles.durationBtnActive : styles.durationBtnInactive,
                 ]}
               >
-                <Text style={[
-                  styles.durationText,
-                  isActive ? styles.durationTextActive : styles.durationTextInactive
-                ]}>
-                  {d}
+                <Text
+                  style={[
+                    styles.durationText,
+                    isActive ? styles.durationTextActive : styles.durationTextInactive,
+                  ]}
+                >
+                  {d.label}
                 </Text>
               </TouchableOpacity>
             );
           })}
         </View>
-        
-        {/* Features Text Link */}
+
         <Text style={styles.featuresHeader}>Features</Text>
 
-        {/* Feature List */}
         <View style={styles.featuresList}>
-          {plan.features.map((feat, idx) => (
-            <View key={idx} style={styles.featureRow}>
-              <Text style={styles.featureLabel}>{feat.label}</Text>
-              
-              {/* Render Check, Cross, or Text Value */}
+          {(activeDuration?.features ?? []).map((feat, idx) => (
+            <View key={`${plan.id}-feat-${idx}`} style={styles.featureRow}>
+              <Text style={styles.featureLabel}>{feat.text ?? '—'}</Text>
+
               <View style={styles.featureValueContainer}>
-                {feat.value === true ? (
-                  <Ionicons name="checkmark-sharp" size={18} color="#000" />
-                ) : feat.value === false ? (
-                  <Ionicons name="close-sharp" size={18} color="#000" />
-                ) : (
-                  <Text style={styles.featureValueText}>{feat.value as string}</Text>
-                )}
+                {/* Note: Simply rendering svg_icon string here as per original code */}
+                <Text style={styles.featureLabel}>{feat.svg_icon ?? '—'}</Text>
               </View>
             </View>
           ))}
+
+          {(activeDuration?.features ?? []).length === 0 && (
+            <Text style={{ color: '#6B7280', fontSize: 13 }}>No features listed</Text>
+          )}
         </View>
 
-        {/* Purchase Button */}
         <TouchableOpacity style={styles.purchaseBtn} activeOpacity={0.8}>
-          <Text style={styles.purchaseBtnText}>Purchase Plan</Text>
+          <Text style={styles.purchaseBtnText}>{plan.buttonText ?? 'Purchase Plan'}</Text>
         </TouchableOpacity>
-
       </View>
     </View>
   );
 };
 
+// --- Main screen ---
 export default function PricingPlans() {
   const router = useRouter();
+  const [plans, setPlans] = useState<UIPricingPlan[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchPlans = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await pricingServices.getAllPricingPlans();
+        
+        // --- FIX START: Cast to any to safely check .data property ---
+        const resAny = response as any;
+        
+        let rawPlans: ApiServicePlan[] = [];
+
+        if (Array.isArray(response)) {
+          // It's a direct array
+          rawPlans = response;
+        } else if (resAny && resAny.data && Array.isArray(resAny.data)) {
+          // It's wrapped in an object { data: [...] }
+          rawPlans = resAny.data;
+        } else {
+          // Fallback
+          rawPlans = [];
+        }
+        // --- FIX END ---
+
+        const uiPlans: UIPricingPlan[] = rawPlans.map((p) => {
+          const durations: UIPricingDuration[] =
+            (p.durations ?? []).map((d) => {
+              const priceRaw = d.price ?? '';
+              const priceText =
+                typeof priceRaw === 'number' ? `₹${priceRaw}` : `${priceRaw}`;
+
+              return {
+                label: d.duration ?? '—',
+                price: d.price ?? '',
+                priceText,
+                features: d.features ?? [],
+              };
+            });
+
+          const finalDurations = durations.length
+            ? durations
+            : [
+                {
+                  label: 'Default',
+                  price: '',
+                  priceText: '',
+                  features: [],
+                },
+              ];
+
+          return {
+            id: String(p.id),
+            title: p.name ?? 'Untitled Plan',
+            subtitle: p.tagline ?? '',
+            isRecommended: Boolean(p.featured),
+            buttonText: p.button_text ?? 'Subscribe Now',
+            durations: finalDurations,
+          };
+        });
+
+        if (mounted) {
+          setPlans(uiPlans);
+        }
+      } catch (err: any) {
+        console.warn('Error fetching plans:', err);
+        if (mounted) {
+          setError(err?.message ?? 'Failed to load plans');
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchPlans();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -172,13 +239,23 @@ export default function PricingPlans() {
         <Text style={styles.headerTitle}>Choose a Plan</Text>
       </View>
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        showsVerticalScrollIndicator={false}
-      >
-        {plans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} />
-        ))}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <ActivityIndicator size="small" />
+          </View>
+        ) : error ? (
+          <View style={{ padding: 20 }}>
+            <Text style={{ color: '#DC2626' }}>{error}</Text>
+          </View>
+        ) : plans.length === 0 ? (
+          <View style={{ padding: 20 }}>
+            <Text style={{ color: '#6B7280' }}>No plans available</Text>
+          </View>
+        ) : (
+          plans.map((plan) => <PlanCard key={plan.id} plan={plan} />)
+        )}
+
         {/* Extra space at bottom */}
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -236,7 +313,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     alignItems: 'center',
-    marginBottom: -2, // Pull card up slightly to connect
+    marginBottom: -2,
     zIndex: 1,
   },
   recommendedText: {
@@ -254,10 +331,10 @@ const styles = StyleSheet.create({
   cardRecommended: {
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
-    borderColor: '#005BC1', // Optional: blue border for recommended
+    borderColor: '#005BC1',
     borderTopWidth: 0,
   },
-  
+
   // Content inside Card
   planTitle: {
     fontSize: 20, //
@@ -266,7 +343,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   priceText: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: '700',
     color: '#000',
     marginBottom: 4,
@@ -275,13 +352,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '400',
     color: '#000',
+    marginVertical: 3,
   },
   subscriptionLabel: {
     fontSize: 13,
     color: '#4B5563',
     marginBottom: 16,
   },
-  
+
   // Duration Toggles
   durationContainer: {
     flexDirection: 'row',
@@ -333,6 +411,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#000',
     fontWeight: '500',
+    flex: 1,
+    paddingRight: 8,
   },
   featureValueContainer: {
     alignItems: 'flex-end',
@@ -344,7 +424,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Button
   purchaseBtn: {
     backgroundColor: '#005BC1', //
     paddingVertical: 14,
