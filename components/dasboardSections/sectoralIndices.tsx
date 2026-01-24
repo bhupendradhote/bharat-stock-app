@@ -18,7 +18,6 @@ import {
 
 const { width } = Dimensions.get('window');
 
-// --- Table Configuration ---
 const GRAPH_WIDTH = 60;
 const GRAPH_HEIGHT = 30;
 
@@ -35,14 +34,13 @@ type IndexModel = {
   chart: number[];
 };
 
-// UPDATED: Added 'searchKey' to help match simpler names (e.g. "Pharma" instead of "NIFTY PHARMA")
 const SECTORAL_SYMBOLS = [
   { id: 'auto', token: '99926002', title: 'NIFTY AUTO', exchange: 'NSE', searchKey: 'Auto' },
   { id: 'fmcg', token: '99926005', title: 'NIFTY FMCG', exchange: 'NSE', searchKey: 'FMCG' },
   { id: 'it', token: '99926006', title: 'NIFTY IT', exchange: 'NSE', searchKey: 'IT' },
-  { id: 'media', token: '99926007', title: 'NIFTY MEDIA', exchange: 'NSE', searchKey: 'Media' },
+  // { id: 'media', token: '99926007', title: 'NIFTY MEDIA', exchange: 'NSE', searchKey: 'Media' },
   { id: 'metal', token: '99926008', title: 'NIFTY METAL', exchange: 'NSE', searchKey: 'Metal' },
-  { id: 'pharma', token: '99926010', title: 'NIFTY PHARMA', exchange: 'NSE', searchKey: 'Pharma' },
+  // { id: 'pharma', token: '99926010', title: 'NIFTY PHARMA', exchange: 'NSE', searchKey: 'Pharma' },
   { id: 'psu', token: '99926012', title: 'PSU BANK', exchange: 'NSE', searchKey: 'PSU' },
   { id: 'pvtbank', token: '99926011', title: 'PVT BANK', exchange: 'NSE', searchKey: 'Pvt' },
   { id: 'realty', token: '99926013', title: 'NIFTY REALTY', exchange: 'NSE', searchKey: 'Realty' },
@@ -51,7 +49,6 @@ const SECTORAL_SYMBOLS = [
   { id: 'healthcare', token: '99926018', title: 'HEALTHCARE', exchange: 'NSE', searchKey: 'Health' },
 ];
 
-// --- Sub-Components ---
 
 const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
   if (!data || data.length === 0) {
@@ -96,7 +93,6 @@ const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
 };
 const Sparkline = React.memo(SparklineBase);
 
-// --- Helper Functions ---
 
 function generateInitialGraph(quote: AngelQuoteRaw): number[] {
   const open = Number(quote.open || 0);
@@ -133,19 +129,15 @@ function generateInitialGraph(quote: AngelQuoteRaw): number[] {
   return path;
 }
 
-// IMPROVED FINDER LOGIC
 const findMarketData = (fetchedData: AngelQuoteRaw[], symbol: typeof SECTORAL_SYMBOLS[0]) => {
-  // 1. Strict Token Match
   const byToken = fetchedData.find((f) => String(f.symbolToken) === String(symbol.token));
   if (byToken) return byToken;
   
-  // 2. Exact Title Match
   const byExactName = fetchedData.find((f) =>
     f.tradingSymbol?.toLowerCase() === symbol.title.toLowerCase()
   );
   if (byExactName) return byExactName;
   
-  // 3. Relaxed Search Key Match (e.g. finds "Pharma" in "Nifty Pharma")
   if (symbol.searchKey) {
     const byKey = fetchedData.find((f) => 
       f.tradingSymbol?.toLowerCase().includes(symbol.searchKey.toLowerCase())
@@ -153,7 +145,6 @@ const findMarketData = (fetchedData: AngelQuoteRaw[], symbol: typeof SECTORAL_SY
     if (byKey) return byKey;
   }
 
-  // 4. Last Resort Fuzzy
   return fetchedData.find((f) => {
     const apiName = f.tradingSymbol?.toLowerCase() || '';
     const searchName = symbol.title.toLowerCase();
@@ -182,15 +173,12 @@ const SectoralIndices: React.FC = () => {
     try {
       if (!refreshing && !indices) setLoading(true);
 
-      // 1. Fetch Main List
       let fetched = await fetchAngelIndices();
 
-      // 2. Identify Missing Indices
       const missingTokens = SECTORAL_SYMBOLS
         .filter(s => !findMarketData(fetched, s))
         .map(s => s.token);
 
-      // 3. Force Fetch Missing Indices specifically
       if (missingTokens.length > 0) {
         console.log("Backfilling missing indices:", missingTokens);
         try {
