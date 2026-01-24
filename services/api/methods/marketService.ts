@@ -1,8 +1,6 @@
 // services/api/methods/marketService.ts
 import axios from 'axios';
 
-// --- Types ---
-
 export type AngelQuoteRaw = {
   exchange: string;
   tradingSymbol: string;
@@ -83,11 +81,9 @@ export async function fetchGainersLosers(): Promise<AngelGainerLoserRaw[]> {
   try {
     const config = { headers: { Accept: 'application/json' }, timeout: 10_000 };
     
-    // We explicitly add 'expirytype' to ensure the backend uses the correct default
     const commonParams = { exchange: 'NSE', expirytype: 'NEAR' };
 
     const [gainersRes, losersRes] = await Promise.all([
-      // 1. Fetch Gainers
       axios.get<AngelGainerLoserResponse>(MOVERS_ENDPOINT, { 
         ...config, 
         params: { ...commonParams, datatype: 'GAINERS' } 
@@ -117,7 +113,6 @@ export async function fetchGainersLosers(): Promise<AngelGainerLoserRaw[]> {
   }
 }
 
-/* FETCH SPECIFIC QUOTES */
 export async function fetchAngelQuotes(
   symbolTokens?: string[]
 ): Promise<AngelQuoteRaw[]> {

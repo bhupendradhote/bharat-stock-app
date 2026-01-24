@@ -49,16 +49,11 @@ const MarketMovers = () => {
     loadData();
   }, [loadData]);
 
-  // --- Helper Functions ---
-
   const fmtPrice = (price: number) =>
     price?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00';
 
-  // CLEANS THE NAME: "BANDHANBNK27JAN26FUT" -> "BANDHANBNK"
   const formatSymbol = (rawSymbol: string) => {
     if (!rawSymbol) return '-';
-    // Splits the string at the first digit and takes the first part
-    // e.g., "TATASTEEL29JAN" -> ["TATASTEEL", "29JAN"] -> "TATASTEEL"
     return rawSymbol.split(/\d/)[0]; 
   };
 
@@ -68,7 +63,6 @@ const MarketMovers = () => {
     const colorStyle = isUp ? styles.textUp : styles.textDown;
     const currentList = activeTab === 'gainers' ? gainers : losers;
 
-    // Use the cleaner function here
     const displayName = formatSymbol(item.tradingSymbol);
 
     return (
@@ -127,7 +121,6 @@ const MarketMovers = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Content Body */}
         {loading ? (
           <View style={styles.centerLoading}>
             <ActivityIndicator size="small" color="#334155" />

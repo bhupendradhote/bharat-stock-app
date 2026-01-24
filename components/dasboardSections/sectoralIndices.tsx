@@ -213,7 +213,6 @@ const SectoralIndices: React.FC = () => {
         const change = netChange > 0 ? `+${netChange.toFixed(2)}` : netChange.toFixed(2);
         const percentChange = `${Math.abs(Number(q.percentChange)).toFixed(2)}%`;
 
-        // Chart Caching Logic
         let chartData = chartCache.current.get(s.token);
         if (!chartData || chartData.length === 0) {
           chartData = generateInitialGraph(q);
