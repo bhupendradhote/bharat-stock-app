@@ -10,7 +10,7 @@ import {
   Platform,
   StatusBar
 } from 'react-native';
-import { useRouter } from 'expo-router'; // 1. Import useRouter
+import { useRouter } from 'expo-router'; 
 
 // --- Types ---
 interface NewsItem {

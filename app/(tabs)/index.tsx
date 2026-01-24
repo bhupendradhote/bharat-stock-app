@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Header from '@/components/includes/header';
 import Sidebar from '@/components/includes/sidebar';
 import Indices from '@/components/dasboardSections/indices';
+import SectoralIndices from '@/components/dasboardSections/sectoralIndices';
 import MarketMovers from '@/components/dasboardSections/marketMovers';
 import Search from '@/components/includes/search';
 
@@ -39,7 +40,6 @@ interface MomentumItem {
   ltp: string;
 }
 
-// --- Mock Data ---
 
 const highlights: HighlightItem[] = [
   {
@@ -75,9 +75,7 @@ const momentum: MomentumItem[] = [
   { symbol: 'PFOCUS', change: '-2.33(-1.13%)', ltp: '203.00' },
 ];
 
-// --- Sub-Components ---
 
-// We explicitly type the props here so 'item' is no longer 'any'
 const HighlightCard = ({ item }: { item: HighlightItem }) => {
   const isBuy = item.action === 'Buy';
 
@@ -116,23 +114,16 @@ const HighlightCard = ({ item }: { item: HighlightItem }) => {
         </View>
       </View>
 
-      {/* Visual Range Slider */}
       <View style={styles.sliderContainer}>
-        {/* The Line */}
         <View style={styles.sliderLine} />
 
-        {/* Dots */}
-        {/* Stop Loss Dot (Left) */}
         <View style={[styles.sliderDot, styles.dotLeft, { backgroundColor: '#ef4444' }]} />
-        {/* Entry Dot (Middle) */}
         <View style={[styles.sliderDot, styles.dotCenter, { backgroundColor: '#f59e0b' }]} />
-        {/* Target Dot (Right) - represented as a ring in the design */}
         <View style={[styles.sliderDotRing, styles.dotRight]}>
           <View style={styles.sliderDotInnerGreen} />
         </View>
       </View>
 
-      {/* Values Row (SL - Entry - Target) */}
       <View style={styles.valuesRow}>
         <View style={styles.valueColLeft}>
           <Text style={styles.valueLabel}>Stop-Loss</Text>
@@ -153,7 +144,6 @@ const HighlightCard = ({ item }: { item: HighlightItem }) => {
   );
 };
 
-// --- Main Component ---
 
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -183,7 +173,6 @@ export default function App() {
           <Search value={search} onChangeText={setSearch} />
           <Indices />
 
-          {/* Today's Market Highlights */}
           <Text style={styles.sectionTitle}>Today’s Market Highlights</Text>
 
           <ScrollView
@@ -196,58 +185,13 @@ export default function App() {
             ))}
           </ScrollView>
 
-          {/* Pagination Dots (Mock) */}
           <View style={styles.paginationContainer}>
             <View style={[styles.pageDot, styles.pageDotActive]} />
             <View style={styles.pageDot} />
           </View>
+                  <SectoralIndices />
 
-
-          {/* Tabs Section */}
-          <View style={styles.tabContainer}>
-            <View style={styles.liveRow}>
-              <Text style={styles.tabHeading}>Stock in Momentum</Text>
-              <View style={styles.liveBadge}><Text style={styles.liveText}>Live</Text></View>
-            </View>
-
-            <View style={styles.capTabs}>
-              {['Small Cap', 'Mid Cap', 'Large Cap'].map((c) => (
-                <TouchableOpacity key={c} onPress={() => setCapTab(c)} style={[styles.capTab, capTab === c && styles.capTabActive]}>
-                  <Text style={[styles.capTabText, capTab === c && styles.capTabTextActive]}>{c}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.timeTabs}>
-              {['15 min', '30 min', '1 day'].map((t) => (
-                <TouchableOpacity key={t} onPress={() => setTimeTab(t)} style={[styles.timeTab, timeTab === t && styles.timeTabActive]}>
-                  <Text style={[styles.timeTabText, timeTab === t && styles.timeTabTextActive]}>{t}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Momentum Table */}
-            <View style={styles.momentumCard}>
-              <View style={styles.momentumHeaderBar}>
-                <Text style={styles.momentumTitleText}>Intraday Trends for you</Text>
-              </View>
-
-              <View style={styles.tableHeaderRow}>
-                <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Symbol</Text>
-                <Text style={[styles.tableHeaderCell, { flex: 3, textAlign: 'center' }]}>15 min change</Text>
-                <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>LTP</Text>
-              </View>
-
-              {momentum.map((m) => (
-                <View key={m.symbol} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { flex: 3 }]}>{m.symbol}</Text>
-                  <Text style={[styles.tableCell, { flex: 3, textAlign: 'center' }, m.change.startsWith('+') ? styles.textGreen : styles.textRed]}>{m.change}</Text>
-                  <Text style={[styles.tableCell, { flex: 2, textAlign: 'right' }]}>{m.ltp}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
+              
           <MarketMovers />
 
         </ScrollView>
@@ -261,7 +205,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   sectionTitle: { fontSize: 20, fontWeight: '700', paddingHorizontal: 16, marginTop: 20, marginBottom: 12 },
 
-  // --- Card Styles ---
   card: {
     width: width * 0.85, 
     backgroundColor: '#fff',
@@ -296,15 +239,14 @@ const styles = StyleSheet.create({
   tagsContainer: { flexDirection: 'row', alignItems: 'center' },
   tag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginLeft: 6 },
   
-  // --- ADDED MISSING STYLE HERE ---
   tagText: { fontSize: 10, fontWeight: '600' }, 
 
   tagBlueBg: { backgroundColor: '#e0f2fe' },
   tagRedBg: { backgroundColor: '#fee2e2' },
   tagGrayBg: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f3f4f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginLeft: 6 },
   
-  tagBlueText: { color: '#0284c7' }, // Removed fontSize/weight (inherited from tagText)
-  tagRedText: { color: '#dc2626' },  // Removed fontSize/weight (inherited from tagText)
+  tagBlueText: { color: '#0284c7' },
+  tagRedText: { color: '#dc2626' },
   tagGrayText: { color: '#4b5563', fontSize: 10, fontWeight: '500' },
 
   mainInfoRow: {
@@ -317,7 +259,6 @@ const styles = StyleSheet.create({
   stockLtp: { fontSize: 16, fontWeight: '700' },
   stockChange: { fontSize: 12, color: '#1f2937', marginTop: 2, fontWeight: '600' },
 
-  // --- Slider Visuals ---
   sliderContainer: {
     height: 20,
     justifyContent: 'center',
@@ -360,7 +301,6 @@ const styles = StyleSheet.create({
   dotCenter: { left: '48%' },
   dotRight: { right: 0 },
 
-  // --- Values Row ---
   valuesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -372,41 +312,17 @@ const styles = StyleSheet.create({
   valueLabel: { fontSize: 12, color: '#6b7280', marginBottom: 4 },
   valueNum: { fontSize: 14, fontWeight: '700' },
 
-  // --- Shared Colors ---
   textGreen: { color: '#10b981' },
   textRed: { color: '#ef4444' },
   textBlack: { color: '#000' },
 
-  // --- Pagination ---
   paginationContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 8 },
   pageDot: { width: 24, height: 6, backgroundColor: '#e5e7eb', borderRadius: 3, marginHorizontal: 3 },
   pageDotActive: { backgroundColor: '#1f2937' },
 
-  // --- Other Sections (Tabs, Momentum) ---
-  tabContainer: { paddingHorizontal: 16, marginTop: 24 },
-  liveRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  tabHeading: { fontSize: 18, fontWeight: '700', marginRight: 10 },
-  liveBadge: { backgroundColor: '#ecfccb', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
-  liveText: { color: '#166534', fontWeight: '700', fontSize: 10 },
 
-  capTabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  capTab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  capTabActive: { borderBottomColor: '#000' },
-  capTabText: { color: '#6b7280', fontSize: 14, fontWeight: '600' },
-  capTabTextActive: { color: '#000' },
 
-  timeTabs: { flexDirection: 'row', marginTop: 16, marginBottom: 16 },
-  timeTab: { paddingVertical: 6, paddingHorizontal: 20, borderRadius: 20, backgroundColor: '#f9fafb', marginRight: 10, borderWidth: 1, borderColor: '#f3f4f6' },
-  timeTabActive: { backgroundColor: '#0284c7', borderColor: '#0284c7' },
-  timeTabText: { color: '#374151', fontSize: 12, fontWeight: '600' },
-  timeTabTextActive: { color: '#fff' },
 
-  momentumCard: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#f3f4f6', overflow: 'hidden' },
-  momentumHeaderBar: { backgroundColor: '#0284c7', paddingVertical: 8, alignItems: 'center' },
-  momentumTitleText: { color: '#fff', fontWeight: '600', fontSize: 13 },
 
-  tableHeaderRow: { flexDirection: 'row', padding: 12, backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  tableHeaderCell: { fontSize: 11, fontWeight: '700', color: '#64748b' },
-  tableRow: { flexDirection: 'row', padding: 14, borderBottomWidth: 1, borderBottomColor: '#f8fafc' },
-  tableCell: { fontSize: 13, fontWeight: '600', color: '#1e293b' },
+
 });
