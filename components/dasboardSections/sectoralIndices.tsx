@@ -10,10 +10,10 @@ import {
   Dimensions,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { 
-  fetchAngelIndices, 
-  fetchAngelQuotes, 
-  AngelQuoteRaw 
+import {
+  fetchAngelIndices,
+  fetchAngelQuotes,
+  AngelQuoteRaw,
 } from '../../services/api/methods/marketService';
 
 const { width } = Dimensions.get('window');
@@ -38,9 +38,7 @@ const SECTORAL_SYMBOLS = [
   { id: 'auto', token: '99926002', title: 'NIFTY AUTO', exchange: 'NSE', searchKey: 'Auto' },
   { id: 'fmcg', token: '99926005', title: 'NIFTY FMCG', exchange: 'NSE', searchKey: 'FMCG' },
   { id: 'it', token: '99926006', title: 'NIFTY IT', exchange: 'NSE', searchKey: 'IT' },
-  // { id: 'media', token: '99926007', title: 'NIFTY MEDIA', exchange: 'NSE', searchKey: 'Media' },
   { id: 'metal', token: '99926008', title: 'NIFTY METAL', exchange: 'NSE', searchKey: 'Metal' },
-  // { id: 'pharma', token: '99926010', title: 'NIFTY PHARMA', exchange: 'NSE', searchKey: 'Pharma' },
   { id: 'psu', token: '99926012', title: 'PSU BANK', exchange: 'NSE', searchKey: 'PSU' },
   { id: 'pvtbank', token: '99926011', title: 'PVT BANK', exchange: 'NSE', searchKey: 'Pvt' },
   { id: 'realty', token: '99926013', title: 'NIFTY REALTY', exchange: 'NSE', searchKey: 'Realty' },
@@ -48,7 +46,6 @@ const SECTORAL_SYMBOLS = [
   { id: 'oilgas', token: '99926017', title: 'OIL & GAS', exchange: 'NSE', searchKey: 'Oil' },
   { id: 'healthcare', token: '99926018', title: 'HEALTHCARE', exchange: 'NSE', searchKey: 'Health' },
 ];
-
 
 const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
   if (!data || data.length === 0) {
@@ -61,7 +58,7 @@ const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
   const points = data.map((value, index) => {
     const denom = max - min || 1;
     const x = (index / (data.length - 1)) * GRAPH_WIDTH;
-    const y = GRAPH_HEIGHT - ((value - min) / denom) * (GRAPH_HEIGHT - 4); 
+    const y = GRAPH_HEIGHT - ((value - min) / denom) * (GRAPH_HEIGHT - 4);
     return `${x},${y}`;
   });
 
@@ -92,7 +89,6 @@ const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
   );
 };
 const Sparkline = React.memo(SparklineBase);
-
 
 function generateInitialGraph(quote: AngelQuoteRaw): number[] {
   const open = Number(quote.open || 0);
@@ -132,14 +128,14 @@ function generateInitialGraph(quote: AngelQuoteRaw): number[] {
 const findMarketData = (fetchedData: AngelQuoteRaw[], symbol: typeof SECTORAL_SYMBOLS[0]) => {
   const byToken = fetchedData.find((f) => String(f.symbolToken) === String(symbol.token));
   if (byToken) return byToken;
-  
+
   const byExactName = fetchedData.find((f) =>
     f.tradingSymbol?.toLowerCase() === symbol.title.toLowerCase()
   );
   if (byExactName) return byExactName;
-  
+
   if (symbol.searchKey) {
-    const byKey = fetchedData.find((f) => 
+    const byKey = fetchedData.find((f) =>
       f.tradingSymbol?.toLowerCase().includes(symbol.searchKey.toLowerCase())
     );
     if (byKey) return byKey;
@@ -160,36 +156,56 @@ function fmt(n: number) {
   });
 }
 
-// --- Main Component ---
-
 const SectoralIndices: React.FC = () => {
   const [indices, setIndices] = useState<IndexModel[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const chartCache = useRef<Map<string, number[]>>(new Map());
-  const intervalRef = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
+  const chartCache = useRef<Map<string, number[]>>(new Map());
+  const isMounted = useRef(true);
+
+  // single interval ref and in-flight guard
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  const load = useCallback(async (isManualRefresh = false) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
     try {
-      if (!refreshing && !indices) setLoading(true);
+      const hasData = chartCache.current.size > 0;
+
+      if (isManualRefresh) {
+        // Pull-to-refresh UI is handled separately
+      } else if (!hasData && isMounted.current) {
+        setLoading(true);
+      }
 
       let fetched = await fetchAngelIndices();
+      if (!isMounted.current) return;
 
+      // backfill missing tokens via fetchAngelQuotes
       const missingTokens = SECTORAL_SYMBOLS
-        .filter(s => !findMarketData(fetched, s))
-        .map(s => s.token);
+        .filter((s) => !findMarketData(fetched, s))
+        .map((s) => s.token);
 
       if (missingTokens.length > 0) {
-        console.log("Backfilling missing indices:", missingTokens);
         try {
           const extraData = await fetchAngelQuotes(missingTokens);
-          if (extraData && extraData.length > 0) {
-             fetched = [...fetched, ...extraData];
-          }
+          if (extraData && extraData.length > 0) fetched = [...fetched, ...extraData];
         } catch (subErr) {
-          console.warn("Failed to fetch missing indices backfill", subErr);
+          console.warn('Failed to fetch missing indices backfill', subErr);
         }
       }
+
+      if (!isMounted.current) return;
 
       const mapped: IndexModel[] = SECTORAL_SYMBOLS.map((s) => {
         const q = findMarketData(fetched, s);
@@ -236,28 +252,44 @@ const SectoralIndices: React.FC = () => {
         };
       });
 
-      setIndices(mapped);
+      if (isMounted.current) {
+        setIndices(mapped);
+      }
     } catch (err) {
       console.warn('Failed to fetch indices', err);
-      if (!indices) setIndices([]);
+      if (!indices && isMounted.current) setIndices([]);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      inFlightRef.current = false;
+      if (isMounted.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [refreshing, indices]);
-
-  useEffect(() => {
-    load();
-    const id = setInterval(() => load(), 5000);
-    intervalRef.current = Number(id);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    // intentionally no dependencies here so the function identity is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Initial load & single 4-second interval
+  useEffect(() => {
+    load(); // initial
+
+    // create exactly one interval
+    timerRef.current = setInterval(() => {
+      if (!inFlightRef.current) load();
+    }, 3000); // 4 seconds
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+    // load is stable due to useCallback with empty deps
+  }, [load]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    load();
+    load(true);
   }, [load]);
 
   const renderHeader = () => (
@@ -376,7 +408,7 @@ const styles = StyleSheet.create({
   chartCol: { flex: 2, alignItems: 'center', justifyContent: 'center' },
   priceCol: { flex: 2, alignItems: 'flex-end' },
   changeCol: { flex: 2, alignItems: 'flex-end' },
-  
+
   // Text Styles
   symbolTitle: { fontSize: 13, fontWeight: '700', color: '#1e293b' },
   exchangeText: { fontSize: 10, fontWeight: '500', color: '#94a3b8', marginTop: 2 },

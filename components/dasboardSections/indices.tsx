@@ -38,21 +38,7 @@ const SYMBOLS = [
   { id: 'finnifty', token: '99926037', title: 'FIN NIFTY', exchange: 'NSE' },
   { id: 'midcap', token: '99926004', title: 'MIDCAP 50', exchange: 'NSE' },
 
-  // --- Sectoral ---
-  // { id: 'auto', token: '99926002', title: 'NIFTY AUTO', exchange: 'NSE' },
-  // { id: 'fmcg', token: '99926005', title: 'NIFTY FMCG', exchange: 'NSE' },
-  // { id: 'it', token: '99926006', title: 'NIFTY IT', exchange: 'NSE' },
-  // { id: 'media', token: '99926007', title: 'NIFTY MEDIA', exchange: 'NSE' },
-  // { id: 'metal', token: '99926008', title: 'NIFTY METAL', exchange: 'NSE' },
-  // { id: 'pharma', token: '99926010', title: 'NIFTY PHARMA', exchange: 'NSE' },
-  // { id: 'psu', token: '99926012', title: 'PSU BANK', exchange: 'NSE' },
-  // { id: 'pvtbank', token: '99926011', title: 'PVT BANK', exchange: 'NSE' },
-  // { id: 'realty', token: '99926013', title: 'NIFTY REALTY', exchange: 'NSE' },
-  // { id: 'consumer', token: '99926016', title: 'CONSUMER', exchange: 'NSE' },
-  // { id: 'oilgas', token: '99926017', title: 'OIL & GAS', exchange: 'NSE' },
-  // { id: 'healthcare', token: '99926018', title: 'HEALTHCARE', exchange: 'NSE' },
-
-  // --- Others ---
+  // --- Sectoral & Others ---
   { id: 'infra', token: '99926021', title: 'INFRA', exchange: 'NSE' },
   { id: 'energy', token: '99926022', title: 'ENERGY', exchange: 'NSE' },
   { id: 'commodities', token: '99926025', title: 'COMMODITIES', exchange: 'NSE' },
@@ -181,13 +167,26 @@ const Indices: React.FC = () => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   
   const chartCache = useRef<Map<string, number[]>>(new Map());
-  const intervalRef = useRef<number | null>(null);
+  const isMounted = useRef(true);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  const load = useCallback(async (isManualRefresh = false) => {
     try {
-      if (!refreshing && !indices) setLoading(true);
+      if (isManualRefresh) {
+        setLoading(true);
+      } else if (!indices && isMounted.current) {
+        setLoading(true);
+      }
 
       const fetched = await fetchAngelIndices();
+
+      if (!isMounted.current) return;
 
       const mapped: IndexModel[] = SYMBOLS.map((s) => {
         const q = findMarketData(fetched, s);
@@ -233,29 +232,97 @@ const Indices: React.FC = () => {
         };
       });
 
-      setIndices(mapped);
+      if (isMounted.current) {
+        setIndices(mapped);
+      }
     } catch (err) {
       console.warn('Failed to fetch indices', err);
-      if (!indices) setIndices([]);
+      if (!indices && isMounted.current) setIndices([]); 
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isMounted.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [refreshing, indices]);
+  }, [indices]); 
+
+  const stableLoad = useCallback(async (isManualRefresh = false) => {
+      try {
+        const hasData = chartCache.current.size > 0;
+        
+        if (isManualRefresh) {
+             // Let refresh control handle UI
+        } else if (!hasData && isMounted.current) {
+             setLoading(true);
+        }
+
+        const fetched = await fetchAngelIndices();
+        if (!isMounted.current) return;
+
+        const mapped: IndexModel[] = SYMBOLS.map((s) => {
+          const q = findMarketData(fetched, s);
+          if (!q) {
+            return { ...s, price: '-', currency: 'INR', change: '-', up: false, chart: [] };
+          }
+
+          const currentLTP = Number(q.ltp ?? q.close ?? 0);
+          const netChange = Number(q.netChange);
+          const up = netChange >= 0;
+          const price = fmt(currentLTP);
+          const change = `${netChange.toFixed(2)} (${Number(q.percentChange).toFixed(2)}%)`;
+
+          let chartData = chartCache.current.get(s.token);
+
+          if (!chartData || chartData.length === 0) {
+            chartData = generateInitialGraph(q);
+            chartCache.current.set(s.token, chartData);
+          } else {
+            const updatedChart = [...chartData];
+            updatedChart[updatedChart.length - 1] = currentLTP;
+            chartCache.current.set(s.token, updatedChart);
+            chartData = updatedChart;
+          }
+
+          return {
+            ...s,
+            exchange: q.exchange || s.exchange,
+            price,
+            currency: 'INR',
+            change,
+            up,
+            chart: chartData,
+          };
+        });
+
+        if (isMounted.current) {
+          setIndices(mapped);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch indices', err);
+      } finally {
+        if (isMounted.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+  }, []);
 
   useEffect(() => {
-    load();
-    const id = setInterval(() => load(), 5000); 
-    intervalRef.current = Number(id);
+    stableLoad(); 
+
+    const intervalId = setInterval(() => {
+      stableLoad();
+    }, 2000);
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearInterval(intervalId);
     };
-  }, []); 
+  }, [stableLoad]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    load();
-  }, [load]);
+    stableLoad(true);
+  }, [stableLoad]);
 
   return (
     <View style={styles.container}>
