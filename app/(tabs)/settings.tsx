@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -10,36 +10,155 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import customerProfileServices from '@/services/api/methods/profileService';
 
 // --- Types ---
 interface MenuItem {
   id: number;
-  icon: any; 
+  icon: any;
   text: string;
   type: 'ionic' | 'material' | 'fontAwesome';
   color?: string;
-  route?: string; // Optional: handy for cleaner routing logic later
+  route?: string;
 }
 
 const { width } = Dimensions.get('window');
 
 const SettingsPage = () => {
-  const router = useRouter(); // Initialize Router
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<any>(null);
+
+  // --- Helper: Get Last 4 Digits ---
+  const getLast4Chars = (str: string | null | undefined, type: 'pan' | 'aadhar') => {
+    if (!str || typeof str !== 'string' || str.length < 4) {
+      return type === 'pan' ? '----------' : '---- ---- ----';
+    }
+    
+    const last4 = str.slice(-4);
+    
+    if (type === 'pan') {
+      return `******${last4}`;
+    } else {
+      return `**** **** ${last4}`;
+    }
+  };
+
+  // --- Helper: Deep Extract KYC Data ---
+  const getKycData = (user: any) => {
+    const kycActions = user?.kyc?.raw_response?.actions;
+    if (Array.isArray(kycActions)) {
+      // Find the action that contains digilocker details
+      const digilockerData = kycActions.find((a: any) => a.type === 'digilocker');
+      return digilockerData?.details || {};
+    }
+    return {};
+  };
+
+  // --- Fetch Data ---
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchProfile = async () => {
+      try {
+        const response: any = await customerProfileServices.getAllProfiles();
+        
+        if (mounted) {
+          // Normalize API response structure
+          const user = response?.user ?? response?.data?.user ?? {};
+          setUserData(user);
+        }
+      } catch (err) {
+        console.warn('Settings fetch error:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    fetchProfile();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // --- Data Formatting Helpers ---
+  const getFormattedDate = (dateString: string | null) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  // --- Derived State ---
+  const bsmrId = userData?.bsmr_id || '-';
+  const userName = userData?.name || 'User';
+  const userEmail = userData?.email || '-';
+  const userPhone = userData?.phone || '-';
+  const isEmailVerified = !!userData?.email_verified_at;
+
+  // --- Extract KYC Details (Pan, Aadhaar, Image) ---
+  const kycDetails = getKycData(userData);
+  
+  // 1. Image Logic: User Image -> KYC Base64 Image -> Placeholder
+  let profileImageSource = { uri: 'https://randomuser.me/api/portraits/men/32.jpg' };
+  
+  if (userData?.image) {
+    profileImageSource = { uri: userData.image };
+  } else if (kycDetails?.aadhaar?.image) {
+    // Append the base64 prefix if missing
+    const base64String = kycDetails.aadhaar.image;
+    profileImageSource = { uri: `data:image/jpeg;base64,${base64String}` };
+  }
+
+  // 2. Documents Logic: User Field -> KYC Details -> Fallback
+  const panNumberRaw = userData?.pan_card || kycDetails?.pan?.id_number;
+  const aadharNumberRaw = userData?.adhar_card || kycDetails?.aadhaar?.id_number;
+
+  const panMasked = getLast4Chars(panNumberRaw, 'pan');
+  const aadharMasked = getLast4Chars(aadharNumberRaw, 'aadhar');
+
+  // --- Subscription Logic ---
+  const subscription = userData?.subscription;
+  const hasActivePlan = subscription?.status === 'active';
+  const planName = userData?.plan?.name || (hasActivePlan ? 'Standard Plan' : 'No Active Plan'); 
+  const validityStart = getFormattedDate(subscription?.start_date);
+  const validityEnd = getFormattedDate(subscription?.end_date);
+
+  // --- KYC Status Logic ---
+  const kycStatus = userData?.kyc?.status || 'pending';
+  const isKycVerified = kycStatus === 'verified' || kycStatus === 'approved';
 
   const menuItems: MenuItem[] = [
-    { 
-      id: 1, 
-      icon: 'card-outline', 
-      text: 'Payment & Invoices', 
+    {
+      id: 1,
+      icon: 'card-outline',
+      text: 'Payment & Invoices',
       type: 'ionic',
-      route: '/pages/settingsInnerPages/paymentAndInvoices' // Added route path
+      route: '/pages/settingsInnerPages/paymentAndInvoices',
     },
-    { id: 2, icon: 'file-text-o', text: 'KYC & Agreement', type: 'fontAwesome', route: '/pages/kyc/kycAgreement' },
+    {
+      id: 2,
+      icon: 'file-text-o',
+      text: 'KYC & Agreement',
+      type: 'fontAwesome',
+      route: '/pages/kyc/kycAgreement',
+    },
     { id: 3, icon: 'help-circle-outline', text: 'Support', type: 'ionic' },
-    { id: 4, icon: 'delete-outline', text: 'Delete Account', type: 'material', color: '#FF3B30' },
+    {
+      id: 4,
+      icon: 'delete-outline',
+      text: 'Delete Account',
+      type: 'material',
+      color: '#FF3B30',
+    },
   ];
 
   const renderIcon = (item: MenuItem) => {
@@ -56,47 +175,79 @@ const SettingsPage = () => {
     }
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#005BC1" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
         <Text style={styles.headerTitle}>Settings</Text>
 
+        {/* --- Profile Section --- */}
         <View style={styles.profileSection}>
           <View style={styles.profileHeaderRow}>
             <View style={styles.avatarWrapper}>
               <Image
-                source={{ uri: 'https://randomuser.me/api/portraits/men/32.jpg' }} 
+                source={profileImageSource}
                 style={styles.avatar}
+                resizeMode="cover"
               />
-              <Text style={styles.userName}>Bhupendra D</Text>
+              <Text style={styles.userName} numberOfLines={1}>
+                {userName}
+              </Text>
             </View>
-            
-              <TouchableOpacity 
-                style={styles.editBtn} 
-                onPress={() => router.push('/pages/profile/profileDetails')}
-              >
-                <Text style={styles.editBtnText}>Edit Profile</Text>
-              </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => router.push('/pages/profile/profileDetails')}
+            >
+              <Text style={styles.editBtnText}>Edit Profile</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.infoGrid}>
             {/* Row 1 */}
             <View style={styles.infoRow}>
               <View style={styles.infoCol}>
-                <Text style={styles.label}>User ID</Text>
-                <Text style={styles.value}>0000000001</Text>
+                <Text style={styles.label}>BSMR ID</Text>
+                <Text style={styles.value}>{bsmrId}</Text>
               </View>
               <View style={styles.infoCol}>
                 <Text style={styles.label}>Email</Text>
                 <View style={styles.emailRow}>
-                  <Text style={[styles.value, styles.emailText]} numberOfLines={1} ellipsizeMode='tail'>
-                    vasanthkumarv@gmail.com
+                  <Text
+                    style={[styles.value, styles.emailText]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    {userEmail}
                   </Text>
-                  <View style={styles.verifiedBadge}>
-                    <Text style={styles.verifiedText}>Verified</Text>
+                  <View
+                    style={[
+                      styles.verifiedBadge,
+                      { backgroundColor: isEmailVerified ? '#DCFCE7' : '#FEE2E2' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.verifiedText,
+                        { color: isEmailVerified ? '#16A34A' : '#EF4444' },
+                      ]}
+                    >
+                      {isEmailVerified ? 'Verified' : 'Unverified'}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -106,61 +257,78 @@ const SettingsPage = () => {
             <View style={styles.infoRow}>
               <View style={styles.infoCol}>
                 <Text style={styles.label}>Phone Number</Text>
-                <Text style={styles.value}>+91 9876543210</Text>
+                <Text style={styles.value}>{userPhone}</Text>
               </View>
               <View style={styles.infoCol}>
                 <Text style={styles.label}>Pan Number</Text>
-                <Text style={styles.value}>******945N</Text>
+                <Text style={styles.value}>{panMasked}</Text>
               </View>
               <View style={styles.infoCol}>
                 <Text style={styles.label}>Aadhar Number</Text>
-                <Text style={styles.value}>**** **** 0923</Text>
+                <Text style={styles.value}>{aadharMasked}</Text>
               </View>
             </View>
           </View>
         </View>
 
+        {/* --- Plan Section --- */}
         <View style={styles.planSection}>
           <View style={styles.planHeaderRow}>
             <Text style={styles.sectionHeading}>Current Plan</Text>
-            <Text style={styles.planName}>None</Text>
+            <Text style={styles.planName}>{planName}</Text>
           </View>
 
           <View style={styles.planDetailRow}>
-            <Text style={styles.planLabel}>Validity</Text>
-            <Text style={styles.planValue}>-</Text>
+            <Text style={styles.planLabel}>Start Date</Text>
+            <Text style={styles.planValue}>{validityStart}</Text>
           </View>
           <View style={styles.planDetailRow}>
-            <Text style={styles.planLabel}>Validity Till</Text>
-            <Text style={styles.planValue}>-</Text>
+            <Text style={styles.planLabel}>End Date</Text>
+            <Text style={styles.planValue}>{validityEnd}</Text>
           </View>
+          
           <View style={styles.planDetailRow}>
             <Text style={styles.planLabel}>KYC Status</Text>
-            <Text style={styles.kycStatusRed}>Not Completed</Text>
+            <Text style={isKycVerified ? styles.kycStatusGreen : styles.kycStatusRed}>
+              {kycStatus.charAt(0).toUpperCase() + kycStatus.slice(1)}
+            </Text>
           </View>
 
           <View style={styles.actionsRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.actionBtnBlue}
               onPress={() => router.push('/pages/settingsInnerPages/pricingPlans')}
             >
               <Text style={styles.actionBtnText}>Upgrade Plan</Text>
             </TouchableOpacity>
 
-            <View style={{ width: 12 }} /> 
+            <View style={{ width: 12 }} />
 
-            <TouchableOpacity 
-              style={styles.actionBtnBlue}
-            >
-              <Text style={styles.actionBtnText}>Complete KYC</Text>
-            </TouchableOpacity>
+            {!isKycVerified && (
+              <TouchableOpacity
+                style={styles.actionBtnBlue}
+                onPress={() => router.push('/pages/kyc/kycAgreement')}
+              >
+                <Text style={styles.actionBtnText}>Complete KYC</Text>
+              </TouchableOpacity>
+            )}
+            
+            {isKycVerified && (
+               <TouchableOpacity
+               style={[styles.actionBtnBlue, { backgroundColor: '#E5E7EB' }]}
+               disabled={true}
+             >
+               <Text style={[styles.actionBtnText, {color: '#9CA3AF'}]}>KYC Completed</Text>
+             </TouchableOpacity>
+            )}
           </View>
         </View>
 
+        {/* --- Menu Section --- */}
         <View style={styles.menuSection}>
           {menuItems.map((item) => (
-            <TouchableOpacity 
-              key={item.id} 
+            <TouchableOpacity
+              key={item.id}
               style={styles.menuItem}
               activeOpacity={0.7}
               onPress={() => {
@@ -180,12 +348,12 @@ const SettingsPage = () => {
             </TouchableOpacity>
           ))}
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );
 };
 
+/* ================== STYLES ================== */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -196,7 +364,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingTop: 10,
   },
-  
+
   headerTitle: {
     fontSize: 22,
     fontWeight: '600',
@@ -219,30 +387,33 @@ const styles = StyleSheet.create({
   avatarWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1, 
   },
   avatar: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#eee', 
+    backgroundColor: '#eee',
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#f3f4f6'
   },
   userName: {
     fontSize: 18,
     fontWeight: '500',
     color: '#000',
-    maxWidth: width * 0.45,
+    maxWidth: width * 0.4, 
   },
   editBtn: {
-    backgroundColor: '#005BC1', 
+    backgroundColor: '#005BC1',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 20,
   },
   editBtnText: {
     color: '#fff',
-    fontSize: 9,
-    fontWeight: '400',
+    fontSize: 10,
+    fontWeight: '500',
   },
 
   // --- Info Grid ---
@@ -259,7 +430,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    color: '#000',
+    color: '#6B7280',
     marginBottom: 4,
     fontWeight: '500',
   },
@@ -268,26 +439,25 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#000',
   },
-  
+
   emailRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
   },
   emailText: {
-    marginRight: 0,
+    marginRight: 6,
+    maxWidth: '65%',
   },
   verifiedBadge: {
-    backgroundColor: '#FFCCCC', // Light red bg
     borderRadius: 12,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    marginLeft: 6,
+    alignSelf: 'flex-start',
   },
   verifiedText: {
-    color: '#FF0000',
     fontSize: 10,
-    fontWeight: '400',
+    fontWeight: '600',
   },
 
   planSection: {
@@ -306,9 +476,9 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   planName: {
-    fontSize: 22,
-    fontWeight: '500',
-    color: '#000',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#005BC1',
   },
   planDetailRow: {
     flexDirection: 'row',
@@ -323,12 +493,17 @@ const styles = StyleSheet.create({
   planValue: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#000',
+    color: '#374151',
   },
   kycStatusRed: {
     fontSize: 15,
-    color: '#FF3B30',
-    fontWeight: '500',
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  kycStatusGreen: {
+    fontSize: 15,
+    color: '#16A34A',
+    fontWeight: '600',
   },
 
   actionsRow: {
@@ -347,7 +522,7 @@ const styles = StyleSheet.create({
   actionBtnText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '400',
+    fontWeight: '600',
   },
 
   menuSection: {
@@ -357,7 +532,7 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   menuIconContainer: {
     width: 30,
@@ -365,7 +540,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   menuText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '500',
     color: '#000',
   },

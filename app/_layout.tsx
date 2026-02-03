@@ -74,18 +74,15 @@ function RootLayoutNav() {
     })();
   }, [readyToShow, opacity]);
 
-  // While auth is loading we don't render the app (native splash still showing)
   if (isLoading) {
     return null;
   }
 
-  // Render the app container with animated opacity — starts invisible and fades in
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Animated.View style={{ flex: 1, opacity }}>
         <View style={{ flex: 1 }}>
           <Stack>
-            {/* order doesn't matter much since we redirect above; keep screens you use */}
             <Stack.Screen name="pages/auth/welcome" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="pages/auth/loginRegister" options={{ headerShown: false }} />

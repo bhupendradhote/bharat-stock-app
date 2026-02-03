@@ -15,22 +15,23 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { authService } from '../../services/api/methods/authService';
-import { storage } from '../../services/storage'; 
+import { storage } from '../../services/storage';
 import { useAuth } from '@/app/context/AuthContext';
+import customerProfileServices from '@/services/api/methods/profileService'; 
 
 const { width } = Dimensions.get('window');
 const SIDEBAR_WIDTH = width * 0.85;
+const AVATAR_SIZE = 96;
+const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
 
 interface SidebarProps {
   visible: boolean;
   onClose: () => void;
 }
 
-const USER_IMAGE = 'https://i.pravatar.cc/300';
-
 const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
   const router = useRouter();
-  const { signOut } = useAuth(); // ✅ Get signOut function
+  const { signOut } = useAuth();
   const [showModal, setShowModal] = useState(visible);
   
   const [userData, setUserData] = useState({
@@ -38,30 +39,74 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
     role: 'Member',
     phone: '',
     email: '',
-    status: 'Active'
+    status: 'Active',
+    plan: 'Free Tier' // Added plan field
   });
-  
+
+  const [profileImage, setProfileImage] = useState(DEFAULT_IMAGE);
   const [loading, setLoading] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Fetch User Data
+  // --- Fetch User Data ---
   useEffect(() => {
+    let mounted = true;
+
     const fetchUser = async () => {
       try {
-        const user = await storage.getUser();
-        if (user) {
+        let user: any = null;
+
+        // 1. Try fetching fresh data from API
+        try {
+          const response: any = await customerProfileServices.getAllProfiles();
+          user = response?.user ?? response?.data?.user;
+        } catch (apiError) {
+          console.warn("Sidebar API fetch failed, falling back to storage", apiError);
+        }
+
+        // 2. Fallback to storage if API failed or returned null
+        if (!user) {
+          user = await storage.getUser();
+        }
+
+        if (mounted && user) {
+          // --- Determine Plan Name ---
+          // Check for explicit plan name, or derive from subscription status
+          const hasActiveSubscription = user.subscription?.status === 'active';
+          const planName = user.plan?.name || (hasActiveSubscription ? 'Standard Plan' : 'Free Tier');
+
+          // --- Set User Details ---
           setUserData({
             name: user.name || user.full_name || 'User',
-            role: user.role || 'Member',
+            role: user.role || 'Member', 
             phone: user.phone || '',
             email: user.email || '',
-            status: user.status || 'Active' 
+            status: user.status || 'Active',
+            plan: planName // Set dynamic plan
           });
+
+          // --- Extract Profile Image ---
+          let finalImage = DEFAULT_IMAGE;
+
+          if (user.image) {
+            finalImage = user.image;
+          } 
+          else {
+            const kycActions = user.kyc?.raw_response?.actions;
+            if (Array.isArray(kycActions)) {
+              const digilocker = kycActions.find((a: any) => a.type === 'digilocker');
+              const base64Img = digilocker?.details?.aadhaar?.image;
+              
+              if (base64Img) {
+                finalImage = `data:image/jpeg;base64,${base64Img}`;
+              }
+            }
+          }
+          setProfileImage(finalImage);
         }
       } catch (error) {
-        console.log("Error fetching user data", error);
+        console.log("Error fetching user data in Sidebar", error);
       }
     };
 
@@ -94,9 +139,13 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
         }),
       ]).start(() => setShowModal(false));
     }
+
+    return () => {
+      mounted = false;
+    };
   }, [visible]);
 
-  // ✅ Logout Function
+  // --- Logout Function ---
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
       { text: "Cancel", style: "cancel" },
@@ -106,16 +155,12 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
         onPress: async () => {
           setLoading(true);
           try {
-            // 1. Attempt API logout
             await authService.logout(); 
           } catch (error) {
             console.log("API logout failed, clearing local data anyway.");
           } finally {
             setLoading(false);
-            onClose(); // Close sidebar first
-            
-            // 2. Call Context SignOut 
-            // This updates global state -> RootLayout sees token is null -> Redirects to Welcome
+            onClose(); 
             await signOut(); 
           }
         }
@@ -146,9 +191,10 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
         >
           <View style={styles.contentContainer}>
             <View style={styles.profileSection}>
+              {/* Profile Image */}
               <View style={styles.avatarWrapper}>
                 <Image
-                  source={{ uri: USER_IMAGE }}
+                  source={{ uri: profileImage }}
                   style={styles.avatar}
                   resizeMode="cover"
                 />
@@ -186,13 +232,17 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
                   <Text style={styles.statusValue}>{userData.status}</Text>
                 </View>
 
+                {/* Dynamic Plan Name */}
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Plan: </Text>
-                  <Text style={styles.infoValue}>Free Tier</Text>
+                  <Text style={styles.infoValue}>{userData.plan}</Text>
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.ctaButton}>
+              <TouchableOpacity style={styles.ctaButton} onPress={() => {
+                  onClose();
+                  // router.push('/pages/marketCalls'); 
+              }}>
                 <Text style={styles.ctaButtonText}>
                   View Market Calls
                 </Text>
@@ -201,7 +251,13 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
 
             {/* Footer */}
             <View style={styles.footerSection}>
-              <TouchableOpacity style={styles.menuItem}>
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => {
+                  onClose();
+                  router.push('../(tabs)/settings');
+                }}
+              >
                 <Feather name="settings" size={20} color="#888" />
                 <Text style={styles.menuText}>Settings</Text>
               </TouchableOpacity>
@@ -227,8 +283,6 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
     </Modal>
   );
 };
-
-const AVATAR_SIZE = 96;
 
 const styles = StyleSheet.create({
   overlay: {
@@ -279,11 +333,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 6,
+    backgroundColor: '#fff',
   },
   avatar: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: '#f0f0f0',
   },
   welcomeText: {
     fontSize: 18,

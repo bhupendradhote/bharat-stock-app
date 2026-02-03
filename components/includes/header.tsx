@@ -1,49 +1,106 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router'; // ✅ Refreshes data on navigation
-import { storage } from '../../services/storage'; 
+import { useFocusEffect } from 'expo-router';
+import { storage } from '../../services/storage';
+import customerProfileServices from '@/services/api/methods/profileService'; // Import your API service
 
 interface HeaderProps {
-  userName?: string; 
+  userName?: string;
   avatarUrl?: string;
   onMenuPress?: () => void;
   onProfilePress?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ 
-  userName, 
-  avatarUrl = "https://i.pravatar.cc/300",
+const Header: React.FC<HeaderProps> = ({
+  userName,
+  avatarUrl,
   onMenuPress,
-  onProfilePress
+  onProfilePress,
 }) => {
-  const [displayName, setDisplayName] = useState(userName || 'Welcome');
+  const [displayName, setDisplayName] = useState(userName || 'User');
+  const [displayAvatar, setDisplayAvatar] = useState(avatarUrl || "https://i.pravatar.cc/300");
 
   useFocusEffect(
     useCallback(() => {
+      let mounted = true;
+
       const loadUser = async () => {
-        if (userName) {
+        // 1. If props are passed, prioritize them (e.g. parent component controls state)
+        if (userName && avatarUrl) {
+          if (mounted) {
             setDisplayName(userName);
-            return;
+            setDisplayAvatar(avatarUrl);
+          }
+          return;
         }
 
         try {
-          const user = await storage.getUser();
+          // 2. Fetch latest data from API to ensure we have the KYC image
+          // (Storage might be stale or missing the deep KYC object)
+          let userData: any = null;
           
-          if (user && user.name) {
-            setDisplayName(user.name);
-          } else if (user && user.full_name) {
-            setDisplayName(user.full_name);
-          } else {
-            setDisplayName("User");
+          try {
+            const response: any = await customerProfileServices.getAllProfiles();
+            // Normalize response
+            userData = response?.user ?? response?.data?.user;
+          } catch (apiError) {
+            console.warn("Header API fetch failed, falling back to storage", apiError);
           }
+
+          // 3. Fallback to Storage if API failed
+          if (!userData) {
+            userData = await storage.getUser();
+          }
+
+          if (!mounted || !userData) return;
+
+          // --- Set Name ---
+          if (!userName) {
+            const name = userData.name || userData.full_name || "User";
+            setDisplayName(name);
+          }
+
+          // --- Set Image ---
+          if (!avatarUrl) {
+            let finalImage = "https://i.pravatar.cc/300";
+
+            // Priority 1: Direct Image URL
+            if (userData.image) {
+              finalImage = userData.image;
+            } 
+            // Priority 2: KYC Base64 Image
+            else {
+              // Deep extraction safety check
+              const kycActions = userData.kyc?.raw_response?.actions;
+              if (Array.isArray(kycActions)) {
+                const digilocker = kycActions.find((a: any) => a.type === 'digilocker');
+                const base64Img = digilocker?.details?.aadhaar?.image;
+                
+                if (base64Img) {
+                  // Ensure formatting is correct
+                  finalImage = `data:image/jpeg;base64,${base64Img}`;
+                }
+              }
+            }
+
+            // Debugging: Uncomment if image still fails
+            // console.log("Header Image Resolved To:", finalImage.substring(0, 50) + "...");
+            
+            setDisplayAvatar(finalImage);
+          }
+
         } catch (e) {
-          console.error("Failed to load user header", e);
+          console.error("Failed to load user header data", e);
         }
       };
 
       loadUser();
-    }, [userName]) 
+
+      return () => {
+        mounted = false;
+      };
+    }, [userName, avatarUrl])
   );
 
   return (
@@ -51,7 +108,7 @@ const Header: React.FC<HeaderProps> = ({
       <View>
         <Text style={styles.welcome}>Welcome!</Text>
         <Text style={styles.username}>
-            {displayName}
+          {displayName}
         </Text>
       </View>
       <View style={styles.headerRight}>
@@ -60,8 +117,9 @@ const Header: React.FC<HeaderProps> = ({
         </TouchableOpacity>
         <TouchableOpacity style={styles.avatarBtn} onPress={onProfilePress}>
           <Image
-            source={{ uri: avatarUrl }}
+            source={{ uri: displayAvatar }}
             style={styles.avatar}
+            resizeMode="cover"
           />
         </TouchableOpacity>
       </View>
@@ -79,7 +137,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
-    paddingTop: 40, 
+    paddingTop: 40,
   },
   welcome: {
     fontSize: 14,
@@ -110,6 +168,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#eee',
+    backgroundColor: '#f0f0f0', 
   },
 });
 

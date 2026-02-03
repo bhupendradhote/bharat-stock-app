@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,17 +9,21 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router'; // 1. Import router
+import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons'; 
 
 import Search from '@/components/includes/search';
+import customerProfileServices from '@/services/api/methods/profileService';
 
 const { width } = Dimensions.get('window');
 
-// Data Types
+// --- Data Types ---
 interface MarketCallData {
-  id: number;
+  id: number | string;
   title: string;
   date: string;
   time: string;
@@ -31,53 +35,168 @@ interface MarketCallData {
   entry: string;
   target: string;
   sliderValue: number;
+  status: string;
+  isLocked?: boolean;
+  description?: string;
 }
 
-// Mock Data
-const CALLS_DATA: MarketCallData[] = [
-  {
-    id: 1,
-    title: 'NIFTY 50',
-    date: '16 JAN',
-    time: '3:18 PM',
-    ltp: '69.25%',
-    change: '+1.45',
-    changePercent: '(2.14%)',
-    potential: '2.0%',
-    stopLoss: '25307.51',
-    entry: '25692.90',
-    target: '26206.76',
-    sliderValue: 0.25,
-  },
-  {
-    id: 2,
-    title: 'BANK NIFTY',
-    date: '17 JAN',
-    time: '10:00 AM',
-    ltp: '42.10%',
-    change: '+0.85',
-    changePercent: '(1.12%)',
-    potential: '1.5%',
-    stopLoss: '44200.00',
-    entry: '44500.50',
-    target: '45000.00',
-    sliderValue: 0.6,
-  },
-];
-
 const TABS = ['Intraday', 'Short', 'Long', 'Options', 'Futures'];
+
+// --- Dummy Static Locked Data ---
+// Note: Titles here will be hidden in the UI
+const LOCKED_PREMIUM_CALLS: MarketCallData[] = [
+  {
+    id: 'locked-1',
+    title: 'BANKNIFTY', // Will be masked
+    date: 'TODAY',
+    time: '10:30 AM',
+    ltp: '0.00',
+    change: '0.00',
+    changePercent: '(0.00%)',
+    potential: 'High',
+    stopLoss: '****',
+    entry: '****',
+    target: '****',
+    sliderValue: 0.5,
+    status: 'Premium',
+    isLocked: true,
+    description: 'Jackpot Call'
+  },
+  {
+    id: 'locked-2',
+    title: 'RELIANCE', // Will be masked
+    date: 'TODAY',
+    time: '09:15 AM',
+    ltp: '0.00',
+    change: '0.00',
+    changePercent: '(0.00%)',
+    potential: 'High',
+    stopLoss: '****',
+    entry: '****',
+    target: '****',
+    sliderValue: 0.5,
+    status: 'Premium',
+    isLocked: true,
+    description: 'Sure Shot'
+  }
+];
 
 const MarketCalls = () => {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('Intraday');
+  
+  // Dynamic State
+  const [marketCalls, setMarketCalls] = useState<MarketCallData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // 2. Helper to handle simple navigation
+  // --- Fetch Data Logic ---
+  const fetchMarketCalls = async () => {
+    try {
+      const response: any = await customerProfileServices.getAllProfiles();
+      const userData = response?.data?.user || response?.user || {};
+      const apiTips = userData.tips || [];
+
+      const formattedCalls: MarketCallData[] = apiTips.map((tip: any) => {
+        const entry = parseFloat(tip.entry_price || '0');
+        const target = parseFloat(tip.target_price || '0');
+        const sl = parseFloat(tip.stop_loss || '0');
+        const ltp = parseFloat(tip.current_price || tip.entry_price || '0'); 
+
+        let progress = 0;
+        if (target > entry) {
+          progress = (ltp - entry) / (target - entry);
+        } else {
+           progress = 0; 
+        }
+        const sliderValue = Math.max(0, Math.min(1, progress));
+
+        const potentialVal = entry > 0 ? ((target - entry) / entry) * 100 : 0;
+        const potential = `${potentialVal.toFixed(2)}%`;
+
+        const dateObj = new Date(tip.created_at || new Date());
+        const date = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase();
+        const time = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+        return {
+          id: tip.id,
+          title: tip.symbol || tip.stock_name || 'UNKNOWN',
+          date: date,
+          time: time,
+          ltp: ltp.toFixed(2),
+          change: (ltp - entry).toFixed(2), 
+          changePercent: `(${((ltp - entry)/entry * 100).toFixed(2)}%)`,
+          potential: potential,
+          stopLoss: sl.toFixed(2),
+          entry: entry.toFixed(2),
+          target: target.toFixed(2),
+          sliderValue: sliderValue,
+          status: tip.status || 'Live',
+          isLocked: false
+        };
+      });
+
+      const reversedApiCalls = formattedCalls.reverse();
+      
+      // Combine API calls with Dummy Locked calls
+      const combinedCalls = [...reversedApiCalls, ...LOCKED_PREMIUM_CALLS];
+
+      setMarketCalls(combinedCalls);
+    } catch (error) {
+      console.error("Failed to fetch market calls", error);
+      // Fallback
+      setMarketCalls(LOCKED_PREMIUM_CALLS);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchMarketCalls();
+    }, [])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchMarketCalls();
+  };
+
   const handleCardPress = (item: MarketCallData) => {
+    if (item.isLocked) {
+      handleUpgrade();
+      return;
+    }
     router.push({
       pathname: '/pages/detailPages/marketCallDetails',
-      params: { ...item } // Passing data as params
+      params: { ...item } as any
     });
   };
+
+  // --- CHANGED: REDIRECT INSTEAD OF POPUP ---
+  const handleUpgrade = () => {
+    // Navigate directly to your subscription or plans page
+    // REPLACE THIS PATH WITH YOUR ACTUAL ROUTE
+    router.push('/pages/settingsInnerPages/pricingPlans'); 
+  };
+
+  const filteredCalls = marketCalls.filter(item => 
+    item.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const highlights = filteredCalls.slice(0, 3);
+  const allCalls = filteredCalls;
+
+  if (loading && !refreshing) {
+     return (
+       <SafeAreaView style={styles.safeArea}>
+         <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+           <ActivityIndicator size="large" color="#005BC1" />
+         </View>
+       </SafeAreaView>
+     );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -90,28 +209,38 @@ const MarketCalls = () => {
              />
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={{ paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
           
-          <Text style={styles.sectionTitle}>Today’s Market Highlights</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingLeft: 16, paddingRight: 8 }}
-          >
-            {CALLS_DATA.map((item) => (
-              <MarketCard 
-                key={item.id} 
-                data={item} 
-                highlight 
-                onPress={() => handleCardPress(item)} 
-              />
-            ))}
-          </ScrollView>
-          
-          <View style={styles.dotsContainer}>
-             <View style={[styles.dot, styles.activeDot]} />
-             <View style={styles.dot} />
-          </View>
+          {/* Highlights Section */}
+          {highlights.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Today’s Market Highlights</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingLeft: 16, paddingRight: 8 }}
+              >
+                {highlights.map((item) => (
+                  <MarketCard 
+                    key={item.id} 
+                    data={item} 
+                    highlight 
+                    onPress={() => handleCardPress(item)}
+                    onUpgrade={handleUpgrade} 
+                  />
+                ))}
+              </ScrollView>
+              
+              <View style={styles.dotsContainer}>
+                  <View style={[styles.dot, styles.activeDot]} />
+                  <View style={styles.dot} />
+              </View>
+            </>
+          )}
 
           <Text style={styles.sectionTitle}>Market Calls</Text>
 
@@ -140,13 +269,20 @@ const MarketCalls = () => {
 
           {/* Vertical List */}
           <View style={{ paddingHorizontal: 16 }}>
-            {CALLS_DATA.map((item) => (
-              <MarketCard 
-                key={item.id} 
-                data={item} 
-                onPress={() => handleCardPress(item)} 
-              />
-            ))}
+            {allCalls.length > 0 ? (
+              allCalls.map((item) => (
+                <MarketCard 
+                  key={item.id} 
+                  data={item} 
+                  onPress={() => handleCardPress(item)} 
+                  onUpgrade={handleUpgrade}
+                />
+              ))
+            ) : (
+              <View style={styles.emptyContainer}>
+                 <Text style={styles.emptyText}>No active market calls found.</Text>
+              </View>
+            )}
           </View>
         </ScrollView>
 
@@ -161,9 +297,12 @@ interface MarketCardProps {
   highlight?: boolean;
   data: MarketCallData;
   onPress?: () => void;
+  onUpgrade?: () => void;
 }
 
-const MarketCard: React.FC<MarketCardProps> = ({ highlight = false, data, onPress }) => {
+const MarketCard: React.FC<MarketCardProps> = ({ highlight = false, data, onPress, onUpgrade }) => {
+  const isLocked = data.isLocked || false;
+
   return (
     <TouchableOpacity 
       activeOpacity={0.9}
@@ -171,86 +310,122 @@ const MarketCard: React.FC<MarketCardProps> = ({ highlight = false, data, onPres
       style={[styles.cardContainer, highlight && { width: width * 0.88, marginRight: 16 }]}
     >
       
+      {/* Badge: Purple for Normal, Dark Grey/Black for Locked */}
       <LinearGradient
-        colors={['#7C3AED', '#9333EA']}
+        colors={isLocked ? ['#1F2937', '#111827'] : ['#7C3AED', '#9333EA']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.potentialBadge}
       >
-        <Text style={styles.potentialText}>{data.potential} Potential</Text>
+        <Text style={styles.potentialText}>
+            {isLocked ? 'PREMIUM PICK' : `${data.potential} Potential`}
+        </Text>
       </LinearGradient>
 
       <View style={styles.topRightActions}>
-        <View style={styles.liveBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>Live</Text>
+        <View style={[styles.liveBadge, isLocked && { backgroundColor: '#374151' }]}>
+          {!isLocked && <View style={styles.liveDot} />}
+          <Text style={styles.liveText}>{data.status || 'Live'}</Text>
         </View>
-        <TouchableOpacity style={styles.saveButton}>
-          <Text style={styles.saveText}>Save</Text>
-        </TouchableOpacity>
+        {!isLocked && (
+            <TouchableOpacity style={styles.saveButton}>
+                <Text style={styles.saveText}>Save</Text>
+            </TouchableOpacity>
+        )}
       </View>
 
-      {/* Header Info */}
       <View style={styles.cardHeader}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoText}>NSE</Text>
+        <View style={[styles.logoBox, isLocked && { backgroundColor: '#374151' }]}>
+          {isLocked ? (
+              <Ionicons name="lock-closed" size={16} color="#9CA3AF" />
+          ) : (
+              <Text style={styles.logoText}>{data.title.substring(0, 3)}</Text>
+          )}
         </View>
         <View style={styles.headerTitleCol}>
-           <Text style={styles.stockTitle}>{data.title}</Text>
+           <Text style={[styles.stockTitle, isLocked && { letterSpacing: 3 }]}>
+             {isLocked ? '' : data.title}
+           </Text>
            <Text style={styles.publishText}>Published on {data.date} • {data.time}</Text>
         </View>
-        <View style={styles.headerPriceCol}>
-           <Text style={styles.priceMain}>
-             {data.change}<Text style={styles.priceSmall}>{data.changePercent}</Text>
-           </Text>
-           <Text style={styles.greenLtp}>{data.ltp}</Text>
-        </View>
+        
+        {!isLocked && (
+            <View style={styles.headerPriceCol}>
+                <Text style={styles.priceMain}>
+                    {Number(data.change) > 0 ? '+' : ''}{data.change}<Text style={styles.priceSmall}>{data.changePercent}</Text>
+                </Text>
+                <Text style={styles.greenLtp}>{data.ltp}</Text>
+            </View>
+        )}
       </View>
 
-      {/* Inner White Bordered Card */}
       <View style={styles.innerCard}>
-         <View style={styles.potentialRow}>
-            <Text style={styles.hugePercent}>{data.potential}</Text>
-            <Text style={styles.potentialLabel}>POTENTIAL UPSIDE</Text>
+         
+         {isLocked && (
+             <View style={styles.lockedOverlay}>
+                 <View style={styles.lockedIconCircle}>
+                    <Ionicons name="lock-closed" size={24} color="#1E3A8A" />
+                 </View>
+                 <Text style={styles.lockedTitle}>Premium Research</Text>
+                 <Text style={styles.lockedSub}>Unlock hidden potential & entry levels</Text>
+                 
+                 <TouchableOpacity onPress={onUpgrade} activeOpacity={0.8}>
+                    {/* UPGRADE BUTTON USING EXISTING BLUE GRADIENT */}
+                    <LinearGradient
+                        colors={['#1E3A8A', '#005BC1']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.upgradeBtn}
+                    >
+                        <Text style={styles.upgradeBtnText}>Upgrade Plan</Text>
+                        <Ionicons name="arrow-forward" size={16} color="#fff" style={{marginLeft: 6}}/>
+                    </LinearGradient>
+                 </TouchableOpacity>
+             </View>
+         )}
+
+         {/* Blurred/Hidden Content underneath */}
+         <View style={[isLocked && { opacity: 0.1 }]}> 
+            <View style={styles.potentialRow}>
+                <Text style={styles.hugePercent}>{isLocked ? '??%' : data.potential}</Text>
+                <Text style={styles.potentialLabel}>POTENTIAL UPSIDE</Text>
+            </View>
+
+            <View style={styles.statsGrid}>
+                <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Stop-Loss</Text>
+                    <Text style={styles.statValue}>{data.stopLoss}</Text>
+                </View>
+                <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Entry</Text>
+                    <Text style={styles.statValue}>{data.entry}</Text>
+                </View>
+                <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Target</Text>
+                    <Text style={styles.statValue}>{data.target}</Text>
+                </View>
+            </View>
+
+            <View style={styles.sliderWrapper}>
+                <LinearGradient
+                    colors={['#EF4444', '#EAB308', '#22C55E']} 
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={styles.sliderTrack}
+                />
+                <View style={[styles.sliderThumb, { left: `${data.sliderValue * 100}%` }]}>
+                    <View style={styles.sliderThumbInner} />
+                </View>
+            </View>
          </View>
 
-         {/* Stats Grid */}
-         <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-               <Text style={styles.statLabel}>Stop-Loss</Text>
-               <Text style={styles.statValue}>{data.stopLoss}</Text>
-            </View>
-            <View style={styles.statItem}>
-               <Text style={styles.statLabel}>Entry</Text>
-               <Text style={styles.statValue}>{data.entry}</Text>
-            </View>
-            <View style={styles.statItem}>
-               <Text style={styles.statLabel}>Target</Text>
-               <Text style={styles.statValue}>{data.target}</Text>
-            </View>
-         </View>
-
-         {/* Gradient Slider */}
-         <View style={styles.sliderWrapper}>
-           <LinearGradient
-             colors={['#EF4444', '#EAB308', '#22C55E']} 
-             start={{ x: 0, y: 0.5 }}
-             end={{ x: 1, y: 0.5 }}
-             style={styles.sliderTrack}
-           />
-           {/* Thumb */}
-           <View style={[styles.sliderThumb, { left: `${data.sliderValue * 100}%` }]}>
-              <View style={styles.sliderThumbInner} />
-           </View>
-         </View>
-
-         {/* Bottom White Pill Container */}
+         {/* Bottom Pill */}
          <View style={styles.bottomPill}>
             <Text style={styles.bottomPillText}>{data.stopLoss}</Text>
             <View style={styles.pillDivider} />
-            <Text style={styles.bottomPillText}>{data.stopLoss}</Text>
+            <Text style={styles.bottomPillText}>{data.ltp}</Text>
             <View style={styles.pillDivider} />
-            <Text style={styles.bottomPillText}>{data.stopLoss}</Text>
+            <Text style={styles.bottomPillText}>{data.target}</Text>
          </View>
       </View>
     </TouchableOpacity>
@@ -267,6 +442,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+  },
 
   /* Header */
   topHeaderContainer: {
@@ -274,7 +458,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
   },
-
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
@@ -328,7 +511,7 @@ const styles = StyleSheet.create({
 
   /* ================= CARD STYLE ================= */
   cardContainer: {
-    backgroundColor: '#F3F5F9', // Light bluish grey background
+    backgroundColor: '#F3F5F9', // Light bluish grey
     borderRadius: 20,
     paddingTop: 16,
     paddingHorizontal: 16,
@@ -376,9 +559,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 11,
     fontWeight: '700',
+    textTransform: 'uppercase'
   },
   saveButton: {
-    backgroundColor: '#E5E7EB', // Grey bg
+    backgroundColor: '#E5E7EB',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 6,
@@ -401,7 +585,7 @@ const styles = StyleSheet.create({
   logoBox: {
     width: 36,
     height: 36,
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#1E3A8A', // Existing Deep Blue
     borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
@@ -422,7 +606,61 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     borderRadius: 16,
     padding: 12,
+    position: 'relative', 
   },
+  
+  /* Locked State Styles */
+  lockedOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: 14,
+      backgroundColor: 'rgba(255,255,255,0.7)', 
+  },
+  lockedIconCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: '#E0E7FF', // Light Blue tint
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 8,
+  },
+  lockedTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: '#1F2937',
+      marginBottom: 2,
+  },
+  lockedSub: {
+      fontSize: 12,
+      color: '#6B7280',
+      marginBottom: 12,
+  },
+  upgradeBtn: {
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 30,
+      flexDirection: 'row',
+      alignItems: 'center',
+      shadowColor: '#1E3A8A',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 5,
+  },
+  upgradeBtnText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 13,
+  },
+
+  /* Normal Content */
   potentialRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -431,7 +669,7 @@ const styles = StyleSheet.create({
   hugePercent: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#22C55E', // Green
+    color: '#22C55E',
     marginRight: 8,
   },
   potentialLabel: {
@@ -480,7 +718,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#22C55E', // Green dot inside
+    backgroundColor: '#22C55E',
   },
 
   /* Bottom Pill */
@@ -503,7 +741,6 @@ const styles = StyleSheet.create({
     height: 14,
     backgroundColor: '#E5E7EB',
   },
-
 });
 
 export default MarketCalls;

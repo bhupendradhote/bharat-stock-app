@@ -20,6 +20,7 @@ export default function ProfileDetails() {
 
   const [loading, setLoading] = useState(true);
 
+  // Form State
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -33,6 +34,9 @@ export default function ProfileDetails() {
   const [panMasked, setPanMasked] = useState('');
   const [aadharMasked, setAadharMasked] = useState('');
 
+  // Track verification status if needed (based on email_verified_at)
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+
   useEffect(() => {
     let mounted = true;
 
@@ -40,30 +44,46 @@ export default function ProfileDetails() {
       try {
         const response: any = await customerProfileServices.getAllProfiles();
 
-        // normalize response
-        const profile = response?.data ?? response ?? {};
+        // 1. Console all data as requested
+        console.log('─── Full Profile API Response ───');
+        console.log(JSON.stringify(response, null, 2));
+        console.log('─────────────────────────────────');
 
         if (!mounted) return;
 
-        setUsername(profile.name ?? '');
-        setEmail(profile.email ?? '');
-        setPhone(profile.phone ?? '');
-        setUserId(profile.id ? String(profile.id).padStart(10, '0') : '');
+        // 2. Normalize Data Access
+        // Your service returns `response.data?.data`. Based on your JSON, 
+        // the object containing 'user' is the root of this response.
+        const userData = response?.user ?? {};
 
-        // optional masked fields
-        setPanMasked(profile.pan_masked ?? '******XXXX');
-        setAadharMasked(profile.aadhar_masked ?? '**** **** XXXX');
+        // 3. Map Fields
+        setUsername(userData.name ?? '');
+        setEmail(userData.email ?? '');
+        setPhone(userData.phone ?? '');
+        setUserId(userData.id ? String(userData.id).padStart(10, '0') : '');
+        
+        setIsEmailVerified(!!userData.email_verified_at);
 
-        if (profile.gender === 'Female') setGender('Female');
-        else setGender('Male');
+        // Map Gender (Handle lowercase 'male'/'female' from API)
+        const apiGender = userData.gender ? userData.gender.toLowerCase() : 'male';
+        setGender(apiGender === 'female' ? 'Female' : 'Male');
 
-        // DOB parsing (YYYY-MM-DD)
-        if (profile.dob) {
-          const [y, m, d] = profile.dob.split('-');
+        // Map Masked Docs (Fallback to defaults if null in API)
+        // Note: Your JSON has 'pan_card' and 'adhar_card', not '_masked'. 
+        // Adjusting to use what might be available or keeping defaults.
+        setPanMasked(userData.pan_card_masked ?? '******XXXX'); 
+        setAadharMasked(userData.adhar_card_masked ?? '**** **** XXXX');
+
+        // 4. DOB Parsing (Handle "2025-12-02T00:00:00.000000Z")
+        if (userData.dob) {
+          // Take the part before 'T' to get YYYY-MM-DD
+          const datePart = userData.dob.split('T')[0];
+          const [y, m, d] = datePart.split('-');
           setYear(y ?? '');
           setMonth(m ?? '');
           setDay(d ?? '');
         }
+
       } catch (err) {
         console.warn('Profile fetch error:', err);
       } finally {
@@ -82,7 +102,7 @@ export default function ProfileDetails() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="small" />
+          <ActivityIndicator size="small" color="#005BC1" />
         </View>
       </SafeAreaView>
     );
@@ -110,7 +130,12 @@ export default function ProfileDetails() {
           {/* Username */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Username</Text>
-            <TextInput style={styles.input} value={username} onChangeText={setUsername} />
+            <TextInput 
+              style={styles.input} 
+              value={username} 
+              onChangeText={setUsername} 
+              placeholder="Enter username"
+            />
           </View>
 
           {/* User ID */}
@@ -145,16 +170,20 @@ export default function ProfileDetails() {
                 onChangeText={setEmail}
                 keyboardType="email-address"
               />
-              <View style={styles.notVerifiedBadge}>
-                <Text style={styles.notVerifiedText}>Not Verified</Text>
-              </View>
+              {!isEmailVerified && (
+                <View style={styles.notVerifiedBadge}>
+                  <Text style={styles.notVerifiedText}>Not Verified</Text>
+                </View>
+              )}
             </View>
-            <TouchableOpacity
-              style={styles.verifyBtn}
-              onPress={() => router.push('/pages/profile/verifyEmail')}
-            >
-              <Text style={styles.verifyBtnText}>Verify Email</Text>
-            </TouchableOpacity>
+            {!isEmailVerified && (
+              <TouchableOpacity
+                style={styles.verifyBtn}
+                onPress={() => router.push('/pages/profile/verifyEmail')}
+              >
+                <Text style={styles.verifyBtnText}>Verify Email</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Phone */}
@@ -196,12 +225,29 @@ export default function ProfileDetails() {
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Date Of Birth</Text>
             <View style={styles.dobRow}>
-              <TextInput style={styles.dobInput} value={day} onChangeText={setDay} />
-              <TextInput style={styles.dobInput} value={month} onChangeText={setMonth} />
+              <TextInput 
+                style={styles.dobInput} 
+                value={day} 
+                onChangeText={setDay} 
+                placeholder="DD"
+                keyboardType="numeric"
+                maxLength={2}
+              />
+              <TextInput 
+                style={styles.dobInput} 
+                value={month} 
+                onChangeText={setMonth} 
+                placeholder="MM"
+                keyboardType="numeric"
+                maxLength={2}
+              />
               <TextInput
                 style={[styles.dobInput, { width: 80 }]}
                 value={year}
                 onChangeText={setYear}
+                placeholder="YYYY"
+                keyboardType="numeric"
+                maxLength={4}
               />
             </View>
           </View>
@@ -211,7 +257,7 @@ export default function ProfileDetails() {
   );
 }
 
-/* ================== STYLES (UNCHANGED) ================== */
+/* ================== STYLES ================== */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -246,11 +292,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
     fontSize: 14,
+    color: '#000',
   },
-  disabledInput: { color: '#9CA3AF' },
+  disabledInput: { color: '#9CA3AF', backgroundColor: '#F3F4F6' },
   row: { flexDirection: 'row', marginBottom: 24 },
   halfCol: { flex: 1 },
-  staticValue: { fontSize: 14, fontWeight: '500' },
+  staticValue: { fontSize: 14, fontWeight: '500', marginTop: 4 },
   emailContainer: { flexDirection: 'row', alignItems: 'center' },
   notVerifiedBadge: {
     position: 'absolute',
@@ -266,8 +313,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     padding: 10,
     borderRadius: 8,
+    alignItems: 'center',
   },
-  verifyBtnText: { color: '#fff', fontSize: 13 },
+  verifyBtnText: { color: '#fff', fontSize: 13, fontWeight: '500' },
   changeNumberBtn: {
     marginTop: 12,
     borderWidth: 1,
@@ -275,8 +323,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     backgroundColor: '#FEF2F2',
+    alignItems: 'center',
   },
-  changeNumberText: { color: '#EF4444', fontSize: 13 },
+  changeNumberText: { color: '#EF4444', fontSize: 13, fontWeight: '500' },
   genderRow: { flexDirection: 'row', gap: 12 },
   genderBtn: {
     paddingVertical: 10,
@@ -286,7 +335,7 @@ const styles = StyleSheet.create({
     borderColor: '#D1D5DB',
   },
   genderBtnActive: { backgroundColor: '#005BC1', borderColor: '#005BC1' },
-  genderText: { fontSize: 14 },
+  genderText: { fontSize: 14, color: '#374151' },
   genderTextActive: { color: '#fff' },
   dobRow: { flexDirection: 'row', gap: 12 },
   dobInput: {
@@ -296,5 +345,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     width: 60,
     textAlign: 'center',
+    color: '#000',
   },
 });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -8,12 +8,104 @@ import {
   TouchableOpacity,
   Platform,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
+import customerProfileServices from '@/services/api/methods/profileService';
 
 export default function PaymentAndInvoices() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [subscription, setSubscription] = useState<any>(null);
+  const [planName, setPlanName] = useState('Free Tier');
+
+  // --- Helper: Format Date ---
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  // --- Helper: Calculate Duration in Months ---
+  const calculateDuration = (start: string, end: string) => {
+    if (!start || !end) return '-';
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    
+    // Approximate difference in months
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    
+    if (diffDays < 32) return '1 Month';
+    if (diffDays < 95) return '3 Months';
+    if (diffDays > 360) return '1 Year';
+    return `${diffDays} Days`;
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchSubscriptionDetails = async () => {
+      try {
+        const response: any = await customerProfileServices.getAllProfiles();
+        
+        if (mounted) {
+          const user = response?.user ?? response?.data?.user ?? {};
+          const subData = user.subscription;
+          
+          if (subData) {
+            setSubscription(subData);
+            
+            // Determine Plan Name
+            if (user.plan?.name) {
+              setPlanName(user.plan.name);
+            } else if (subData.status === 'active') {
+              setPlanName('Standard Plan');
+            } else {
+              setPlanName('Free Tier');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Payment details fetch error:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    fetchSubscriptionDetails();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // --- Derived State ---
+  const isActive = subscription?.status === 'active';
+  const validityStart = subscription?.start_date;
+  const validityEnd = subscription?.end_date;
+  const durationLabel = isActive && validityStart && validityEnd 
+    ? calculateDuration(validityStart, validityEnd) 
+    : '-';
+
+  const formattedEndDate = formatDate(validityEnd);
+  const displayStatus = isActive ? 'Active' : (subscription?.status || 'Inactive');
+  const statusColor = isActive ? '#16A34A' : '#EF4444'; // Green or Red
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#005BC1" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -34,42 +126,48 @@ export default function PaymentAndInvoices() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-          <View style={styles.card}>
-        <Text style={styles.pageTitle}>Payment & Invoices</Text>
-        <Text style={styles.pageSubtitle}>
-          Manage your subscriptions, view past payments, and securely download invoices.
-        </Text>
+        <View style={styles.card}>
+          <Text style={styles.pageTitle}>Payment & Invoices</Text>
+          <Text style={styles.pageSubtitle}>
+            Manage your subscriptions, view past payments, and securely download invoices.
+          </Text>
 
           <Text style={styles.cardHeader}>Current Plan Summary</Text>
           
-          <Text style={styles.planName}>Premium</Text>
+          <Text style={styles.planName}>{planName}</Text>
 
           <View style={styles.detailRow}>
             <Text style={styles.label}>Validity</Text>
-            <Text style={styles.value}>3 Months</Text>
+            <Text style={styles.value}>{durationLabel}</Text>
           </View>
           
           <View style={styles.detailRow}>
             <Text style={styles.label}>Validity Till</Text>
-            <Text style={styles.value}>12 Dec 2025</Text>
+            <Text style={styles.value}>{formattedEndDate}</Text>
           </View>
 
           <View style={styles.detailRow}>
             <Text style={styles.label}>Status</Text>
-            <Text style={styles.value}>Active</Text>
+            <Text style={[styles.value, { color: statusColor, textTransform: 'capitalize' }]}>
+              {displayStatus}
+            </Text>
           </View>
 
           {/* Action Buttons */}
           <View style={styles.buttonGroup}>
             <TouchableOpacity style={styles.primaryButton}
              onPress={() => router.push('/pages/settingsInnerPages/pricingPlans')}>
-              <Text style={styles.buttonText}>Upgrade Plan</Text>
+              <Text style={styles.buttonText}>
+                {isActive ? "Upgrade Plan" : "Buy Plan"}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.primaryButton}
-             onPress={() => router.push('/pages/settingsInnerPages/pricingPlans')}>
-              <Text style={styles.buttonText}>Renew Plan</Text>
-            </TouchableOpacity>
+            {isActive && (
+              <TouchableOpacity style={styles.primaryButton}
+               onPress={() => router.push('/pages/settingsInnerPages/pricingPlans')}>
+                <Text style={styles.buttonText}>Renew Plan</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <TouchableOpacity 
@@ -90,16 +188,18 @@ export default function PaymentAndInvoices() {
             <Ionicons name="chevron-forward" size={16} color="#000" />
           </TouchableOpacity>
 
-          {/* Renewal Reminder Section */}
-          <View style={styles.reminderSection}>
-            <Text style={styles.reminderTitle}>Renewal Reminder</Text>
-            <Text style={styles.reminderText}>
-              <Ionicons name="warning-outline" size={14} color="#000" /> Your plan expires soon. Renew now to continue receiving Market Calls.
-            </Text>
-            <TouchableOpacity>
-              <Text style={styles.renewLink}>[ Renew Plan ]</Text>
-            </TouchableOpacity>
-          </View>
+          {/* Renewal Reminder Section - Show only if active */}
+          {isActive && (
+            <View style={styles.reminderSection}>
+              <Text style={styles.reminderTitle}>Renewal Reminder</Text>
+              <Text style={styles.reminderText}>
+                <Ionicons name="warning-outline" size={14} color="#000" /> Your plan expires on {formattedEndDate}. Renew now to continue receiving Market Calls.
+              </Text>
+              <TouchableOpacity onPress={() => router.push('/pages/settingsInnerPages/pricingPlans')}>
+                <Text style={styles.renewLink}>[ Renew Plan ]</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
         </View>
 
@@ -137,6 +237,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 20,
+    paddingTop: 0,
+
   },
   
   // Titles
@@ -170,7 +272,7 @@ const styles = StyleSheet.create({
   planName: {
     fontSize: 20,
     fontWeight: '500',
-    color: '#000',
+    color: '#005BC1', // Highlighted color
     marginBottom: 16,
   },
   
@@ -182,7 +284,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    color: '#000',
+    color: '#555',
     fontWeight: '400',
   },
   value: {
@@ -195,6 +297,8 @@ const styles = StyleSheet.create({
   buttonGroup: {
     marginTop: 12,
     marginBottom: 24,
+    flexDirection: 'row', // Align buttons horizontally if space permits, or wrap
+    flexWrap: 'wrap',
     gap: 12, 
   },
   primaryButton: {
@@ -215,6 +319,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
   },
   icon: {
     marginRight: 12,
@@ -229,11 +335,14 @@ const styles = StyleSheet.create({
   // Renewal Section
   reminderSection: {
     marginTop: 24,
+    backgroundColor: '#FEF2F2',
+    padding: 12,
+    borderRadius: 8,
   },
   reminderTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: '#EF4444',
     marginBottom: 8,
   },
   reminderText: {
@@ -244,7 +353,7 @@ const styles = StyleSheet.create({
   },
   renewLink: {
     fontSize: 13,
-    color: '#000',
-    fontWeight: '500',
+    color: '#EF4444',
+    fontWeight: '600',
   },
 });

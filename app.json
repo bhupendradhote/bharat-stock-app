@@ -28,26 +28,31 @@
     "plugins": [
       "expo-router",
       [
-  "expo-splash-screen",
-  {
-    "image": "./assets/images/icon.svg",
-    "resizeMode": "contain",
-    "imageWidth": 160,
-    "backgroundColor": "#FFFFFF",
-    "border": 0,
-    "dark": {
-      "image": "./assets/images/icon.svg",
-      "resizeMode": "contain",
-      "imageWidth": 160,
-      "backgroundColor": "#020617"
-    }
-  }
-]
-
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/icon.svg",
+          "resizeMode": "contain",
+          "imageWidth": 160,
+          "backgroundColor": "#FFFFFF",
+          "border": 0,
+          "dark": {
+            "image": "./assets/images/icon.svg",
+            "resizeMode": "contain",
+            "imageWidth": 160,
+            "backgroundColor": "#020617"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2a1ef606-e726-4c50-9d00-7bebab722e89"
+      }
     }
   }
 }
