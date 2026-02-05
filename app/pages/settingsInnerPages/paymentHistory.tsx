@@ -1,18 +1,15 @@
 import React from 'react';
 import {
-  SafeAreaView,
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Platform,
-  StatusBar,
 } from 'react-native';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
-// --- Types ---
 interface Transaction {
   id: string;
   date: string;
@@ -22,7 +19,6 @@ interface Transaction {
   invoiceUrl?: string;
 }
 
-// --- Mock Data ---
 const transactions: Transaction[] = [
   { id: 'INV-2025-001', date: '12 Sep 2025', plan: 'Premium (3 Months)', amount: '₹2,499', status: 'Success' },
   { id: 'INV-2025-002', date: '12 Jun 2025', plan: 'Premium (3 Months)', amount: '₹2,499', status: 'Success' },
@@ -36,14 +32,12 @@ export default function PaymentHistory() {
   const renderItem = ({ item }: { item: Transaction }) => (
     <View style={styles.card}>
       <View style={styles.row}>
-        {/* Left Side: Date & Plan */}
         <View style={styles.infoCol}>
           <Text style={styles.planText}>{item.plan}</Text>
           <Text style={styles.dateText}>{item.date}</Text>
           <Text style={styles.idText}>ID: {item.id}</Text>
         </View>
 
-        {/* Right Side: Amount & Status */}
         <View style={styles.statusCol}>
           <Text style={styles.amountText}>{item.amount}</Text>
           <View style={[
@@ -60,10 +54,8 @@ export default function PaymentHistory() {
         </View>
       </View>
 
-      {/* Divider */}
       <View style={styles.divider} />
 
-      {/* Action Row */}
       <TouchableOpacity style={styles.downloadRow} activeOpacity={0.6}>
         <Feather name="download" size={16} color="#005BC1" />
         <Text style={styles.downloadText}>Download Invoice</Text>
@@ -72,17 +64,8 @@ export default function PaymentHistory() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Payment History</Text>
-      </View>
 
       <FlatList
         data={transactions}
@@ -91,35 +74,13 @@ export default function PaymentHistory() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
   listContent: {
-    padding: 16,
+    padding: 10,
   },
   card: {
     backgroundColor: '#fff',

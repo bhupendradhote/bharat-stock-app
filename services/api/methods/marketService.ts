@@ -1,6 +1,7 @@
 // services/api/methods/marketService.ts
 import axios from 'axios';
 
+
 export type AngelQuoteRaw = {
   exchange: string;
   tradingSymbol: string;
@@ -35,10 +36,15 @@ export type AngelGainerLoserRaw = {
   percentChange: number;
 };
 
-export type AngelGainerLoserResponse = {
+type AngelMoverAPIResponse = {
   status: boolean;
   message: string;
   data: AngelGainerLoserRaw[];
+};
+
+export type MarketMoversResult = {
+  gainers: AngelGainerLoserRaw[];
+  losers: AngelGainerLoserRaw[];
 };
 
 export type AngelCandle = {
@@ -64,11 +70,16 @@ const INDICES_ENDPOINT = `${API_BASE}/indices`;
 const MOVERS_ENDPOINT = `${API_BASE}/gainers-losers`;
 const HISTORY_ENDPOINT = `${API_BASE}/history`;
 
+const DEFAULT_TIMEOUT = 10_000;
+const JSON_HEADERS = { Accept: 'application/json' };
+
+// --- Methods ---
+
 export async function fetchAngelIndices(): Promise<AngelQuoteRaw[]> {
   try {
     const res = await axios.get<AngelQuoteResponse>(INDICES_ENDPOINT, {
-      headers: { Accept: 'application/json' },
-      timeout: 10_000,
+      headers: JSON_HEADERS,
+      timeout: DEFAULT_TIMEOUT,
     });
     return res.data?.data?.fetched ?? [];
   } catch (err) {
@@ -77,39 +88,41 @@ export async function fetchAngelIndices(): Promise<AngelQuoteRaw[]> {
   }
 }
 
-export async function fetchGainersLosers(): Promise<AngelGainerLoserRaw[]> {
+
+export async function fetchGainersLosers(): Promise<MarketMoversResult> {
   try {
-    const config = { headers: { Accept: 'application/json' }, timeout: 10_000 };
-    
-    const commonParams = { exchange: 'NSE', expirytype: 'NEAR' };
+    const config = { headers: JSON_HEADERS, timeout: DEFAULT_TIMEOUT };
+    const params = { exchange: 'NSE', expirytype: 'NEAR' };
 
     const [gainersRes, losersRes] = await Promise.all([
-      axios.get<AngelGainerLoserResponse>(MOVERS_ENDPOINT, { 
+      axios.get<AngelMoverAPIResponse>(MOVERS_ENDPOINT, { 
         ...config, 
-        params: { ...commonParams, datatype: 'GAINERS' } 
+        params: { ...params, datatype: 'GAINERS' } 
       }).catch(err => {
-        if (err.response?.status !== 400) console.warn('Gainers API Error:', err.message);
+        console.warn('Gainers fetch failed:', err.message);
         return null;
       }),
 
-      // 2. Fetch Losers
-      axios.get<AngelGainerLoserResponse>(MOVERS_ENDPOINT, { 
+      axios.get<AngelMoverAPIResponse>(MOVERS_ENDPOINT, { 
         ...config, 
-        params: { ...commonParams, datatype: 'LOSERS' } 
+        params: { ...params, datatype: 'LOSERS' } 
       }).catch(err => {
-        if (err.response?.status !== 400) console.warn('Losers API Error:', err.message);
+        console.warn('Losers fetch failed:', err.message);
         return null;
       }),
     ]);
 
-    const gainers = gainersRes?.data?.data ?? [];
-    const losers = losersRes?.data?.data ?? [];
+    const gainers = gainersRes?.data?.data || [];
+    const losers = losersRes?.data?.data || [];
 
-    return [...gainers, ...losers];
+    return {
+      gainers,
+      losers
+    };
 
   } catch (err) {
     console.error('fetchGainersLosers Critical Error:', err);
-    return [];
+    return { gainers: [], losers: [] };
   }
 }
 
@@ -124,8 +137,8 @@ export async function fetchAngelQuotes(
 
     const res = await axios.get<AngelQuoteResponse>(QUOTE_ENDPOINT, {
       params,
-      headers: { Accept: 'application/json' },
-      timeout: 10_000,
+      headers: JSON_HEADERS,
+      timeout: DEFAULT_TIMEOUT,
     });
 
     const fetched = res.data?.data?.fetched ?? [];
@@ -133,17 +146,19 @@ export async function fetchAngelQuotes(
     if (!symbolTokens || symbolTokens.length === 0) return fetched;
 
     const mapped: AngelQuoteRaw[] = [];
+    const fetchedMap = new Map(fetched.map(f => [String(f.symbolToken), f]));
+
     for (const token of symbolTokens) {
-      const found = fetched.find((f) => String(f.symbolToken) === String(token));
+      const found = fetchedMap.get(String(token));
       if (found) mapped.push(found);
     }
+    
     return mapped.length > 0 ? mapped : fetched;
   } catch (err) {
     throw err;
   }
 }
 
-/* FETCH HISTORY */
 export async function fetchAngelHistory(params: {
   symbolToken: string;
   exchange: 'NSE' | 'BSE';
@@ -154,8 +169,8 @@ export async function fetchAngelHistory(params: {
   try {
     const res = await axios.get<AngelHistoryResponse>(HISTORY_ENDPOINT, {
       params,
-      headers: { Accept: 'application/json' },
-      timeout: 10_000,
+      headers: JSON_HEADERS,
+      timeout: DEFAULT_TIMEOUT,
     });
 
     const data = res.data?.data;
@@ -168,6 +183,7 @@ export async function fetchAngelHistory(params: {
             high: d[2],
             low: d[3],
             close: d[4],
+            volume: d[5], // Map volume if available
           };
         }
         return d;

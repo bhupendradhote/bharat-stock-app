@@ -89,8 +89,8 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
           // --- Extract Profile Image ---
           let finalImage = DEFAULT_IMAGE;
 
-          if (user.image) {
-            finalImage = user.image;
+          if (user.profile_image_url) {
+            finalImage = user.profile_image_url;
           } 
           else {
             const kycActions = user.kyc?.raw_response?.actions;
@@ -240,8 +240,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
               </View>
 
               <TouchableOpacity style={styles.ctaButton} onPress={() => {
-                  onClose();
-                  // router.push('/pages/marketCalls'); 
+                  router.push('../(tabs)/market-calls'); 
               }}>
                 <Text style={styles.ctaButtonText}>
                   View Market Calls
@@ -249,7 +248,6 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Footer */}
             <View style={styles.footerSection}>
               <TouchableOpacity 
                 style={styles.menuItem} 

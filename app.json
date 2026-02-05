@@ -4,7 +4,7 @@
     "slug": "bharatStock",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.svg",
+    "icon": "./assets/images/",
     "scheme": "bharatStock",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/icon.svg"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.bhupendra_dhote.bharatStock"
     },
     "web": {
       "output": "static",
@@ -56,3 +57,4 @@
     }
   }
 }
+ 

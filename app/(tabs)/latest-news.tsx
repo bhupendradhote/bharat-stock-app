@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -8,120 +8,173 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
-  StatusBar
+  StatusBar,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router'; 
+import { useRouter } from 'expo-router';
+// Ensure this path matches your project structure
+import blogAndNewsService from '@/services/api/methods/blogAndNewsService';
 
-// --- Types ---
+// --- Interface matching your data structure ---
 interface NewsItem {
-  id: number;
+  id: number | string;
   title: string;
   meta: string;
   imageUrl: string;
+  type: 'news' | 'blog'; // Strict union type
+  content?: string;
+  shortDescription?: string;
+  originalDate?: string; // Used for sorting
 }
 
-// --- Mock Data ---
-const newsData: NewsItem[] = [
-  {
-    id: 1,
-    title: 'Earnings growth might remain sluggish for next two years.',
-    meta: 'September 22, 2025 • 12.27AM IST',
-    imageUrl: 'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 2,
-    title: 'Mid-sized food chain hit the market as PE appetite surges.',
-    meta: '4 MIN READ',
-    imageUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 3,
-    title: 'Fed rate cut charm may not cheer Asian equities this time.',
-    meta: '4 MIN READ',
-    imageUrl: 'https://images.unsplash.com/photo-1611974765270-ca1258634369?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 4,
-    title: 'Tata Sons director urges Tata International to focus on profit.',
-    meta: '4 MIN READ',
-    imageUrl: 'https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 5,
-    title: 'Gold prices hit all-time high amidst global market uncertainty.',
-    meta: '6 MIN READ',
-    imageUrl: 'https://images.unsplash.com/photo-1610375461246-d5de5a1a8d20?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 6,
-    title: 'Real Estate: Why tier-2 cities are seeing a sudden boom.',
-    meta: '2 MIN READ',
-    imageUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 7,
-    title: 'EV Sector Outlook: New battery tech could change everything.',
-    meta: 'September 20, 2025 • 4.30PM IST',
-    imageUrl: 'https://images.unsplash.com/photo-1593941707882-a5bba14938c7?q=80&w=300&auto=format&fit=crop', 
-  },
-  {
-    id: 8,
-    title: 'Startups face funding winter as investors tighten purse strings.',
-    meta: '5 MIN READ',
-    imageUrl: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?q=80&w=300&auto=format&fit=crop', 
-  },
-];
-
 const NewsPage = () => {
-  const router = useRouter(); // 2. Initialize Router
+  const router = useRouter();
+  const [feedData, setFeedData] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const getImageUrl = (item: any) => {
+    return item.image || item.image_url || item.thumbnail || 'https://via.placeholder.com/150';
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // 1. Fetch data from both endpoints
+      const [newsResponse, blogsResponse] = await Promise.all([
+        blogAndNewsService.news.getAllNews(),
+        blogAndNewsService.blogs.getAllBlogs(),
+      ]);
+
+      const getArray = (response: any) => {
+        if (Array.isArray(response)) return response;
+        if (response?.data && Array.isArray(response.data)) return response.data;
+        if (response?.blogs && Array.isArray(response.blogs)) return response.blogs;
+        if (response?.news && Array.isArray(response.news)) return response.news;
+        return [];
+      };
+
+      const rawNews = getArray(newsResponse);
+      const rawBlogs = getArray(blogsResponse);
+
+      // 2. Format News
+      const formattedNews: NewsItem[] = rawNews.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        meta: formatDate(item.published_at || item.created_at) || 'Latest News',
+        imageUrl: getImageUrl(item),
+        type: 'news', // Explicit string
+        content: item.content,
+        shortDescription: item.short_description,
+        originalDate: item.published_at || item.created_at,
+      }));
+
+      // 3. Format Blogs (with Reading Time)
+      const formattedBlogs: NewsItem[] = rawBlogs.map((item: any) => {
+        const dateStr = formatDate(item.published_at || item.created_at);
+        const readTime = item.reading_time ? ` • ${item.reading_time} min read` : ' • Blog';
+        
+        return {
+          id: item.id,
+          title: item.title,
+          meta: `${dateStr}${readTime}`,
+          imageUrl: getImageUrl(item),
+          type: 'blog', // Explicit string
+          content: item.content,
+          shortDescription: item.short_description,
+          originalDate: item.published_at || item.created_at,
+        };
+      });
+
+      // 4. Combine and Sort by Date (Newest First)
+      const combined = [...formattedNews, ...formattedBlogs].sort((a, b) => {
+        const dateA = new Date(a.originalDate || 0).getTime();
+        const dateB = new Date(b.originalDate || 0).getTime();
+        return dateB - dateA; // Descending order
+      });
+
+      setFeedData(combined);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Status Bar config for clean look */}
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <Text style={styles.headerTitle}>Latest News</Text>
 
-        <View style={styles.listContainer}>
-          {newsData.map((item) => (
-            <TouchableOpacity 
-              key={item.id} 
-              style={styles.card} 
-              activeOpacity={0.7}
-              // 3. Navigation Logic
-              onPress={() => {
-                router.push({
-                  pathname: '/pages/detailPages/newsDetails',
-                  params: {
-                    id: item.id,
-                    title: item.title,
-                    meta: item.meta,
-                    imageUrl: item.imageUrl,
-                  }
-                });
-              }}
-            >
-              {/* Text Section */}
-              <View style={styles.textContainer}>
-                <Text style={styles.title} numberOfLines={3}>
-                  {item.title}
-                </Text>
-                <Text style={styles.meta}>{item.meta}</Text>
-              </View>
-
-              {/* Image Section */}
-              <Image 
-                source={{ uri: item.imageUrl }} 
-                style={styles.thumbnail}
-              />
-            </TouchableOpacity>
-          ))}
+      {loading ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#000" />
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <Text style={styles.headerTitle}>Latest Updates</Text>
+
+          <View style={styles.listContainer}>
+            {feedData.length === 0 ? (
+              <Text style={styles.emptyText}>No updates available.</Text>
+            ) : (
+              feedData.map((item, index) => (
+                <TouchableOpacity
+                  key={`${item.type}-${item.id}-${index}`}
+                  style={styles.card}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    // Pass ID and Type so the details page knows what to fetch
+                    router.push({
+                      pathname: '/pages/detailPages/newsDetails',
+                      params: {
+                        id: item.id,
+                        type: item.type, // Important: Pass the type ('news' or 'blog')
+                      },
+                    });
+                  }}
+                >
+                  <View style={styles.textContainer}>
+                    <Text style={styles.title} numberOfLines={3}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.meta}>
+                        {/* Optional: Add a small label prefix */}
+                        {item.type === 'blog' ? 'Blog • ' : 'News • '} 
+                        {item.meta}
+                    </Text>
+                  </View>
+
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={styles.thumbnail}
+                  />
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -131,6 +184,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   scrollContent: {
     paddingBottom: 40,
@@ -148,38 +206,50 @@ const styles = StyleSheet.create({
   },
   card: {
     flexDirection: 'row',
-    backgroundColor: '#0000000D', 
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 14,
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    backgroundColor: '#fff', // Changed to white for cleaner look
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB', // Subtle border
+    // Optional shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   textContainer: {
     flex: 1,
-    marginRight: 16,
+    marginRight: 12,
     justifyContent: 'space-between',
-    minHeight: 90, 
+    minHeight: 80,
   },
   title: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#000',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
     lineHeight: 22,
-    marginBottom: 25,
+    marginBottom: 8,
   },
   meta: {
-    fontSize: 10,
-    color: '#000', 
-    fontWeight: '400',
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
     marginTop: 'auto',
   },
   thumbnail: {
-    width: 113,
-    height: 113,
-    borderRadius: 12,
-    backgroundColor: '#E5E7EB',
+    width: 90,
+    height: 90,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
     resizeMode: 'cover',
+  },
+  emptyText: {
+    textAlign: 'center',
+    marginTop: 40,
+    color: '#666',
+    fontSize: 16,
   },
 });
 

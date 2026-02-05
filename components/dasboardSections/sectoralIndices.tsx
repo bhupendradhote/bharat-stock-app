@@ -12,7 +12,6 @@ import {
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import {
   fetchAngelIndices,
-  fetchAngelQuotes,
   AngelQuoteRaw,
 } from '../../services/api/methods/marketService';
 
@@ -54,9 +53,10 @@ const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
 
   const max = Math.max(...data);
   const min = Math.min(...data);
+  const diff = max - min;
 
   const points = data.map((value, index) => {
-    const denom = max - min || 1;
+    const denom = diff === 0 ? 1 : diff;
     const x = (index / (data.length - 1)) * GRAPH_WIDTH;
     const y = GRAPH_HEIGHT - ((value - min) / denom) * (GRAPH_HEIGHT - 4);
     return `${x},${y}`;
@@ -126,6 +126,8 @@ function generateInitialGraph(quote: AngelQuoteRaw): number[] {
 }
 
 const findMarketData = (fetchedData: AngelQuoteRaw[], symbol: typeof SECTORAL_SYMBOLS[0]) => {
+  if (!fetchedData || !Array.isArray(fetchedData)) return undefined;
+
   const byToken = fetchedData.find((f) => String(f.symbolToken) === String(symbol.token));
   if (byToken) return byToken;
 
@@ -163,10 +165,9 @@ const SectoralIndices: React.FC = () => {
 
   const chartCache = useRef<Map<string, number[]>>(new Map());
   const isMounted = useRef(true);
-
-  // single interval ref and in-flight guard
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inFlightRef = useRef(false);
+  
+  // Guard against overlapping requests
+  const isFetching = useRef(false);
 
   useEffect(() => {
     isMounted.current = true;
@@ -175,42 +176,39 @@ const SectoralIndices: React.FC = () => {
     };
   }, []);
 
-  const load = useCallback(async (isManualRefresh = false) => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+  const fetchData = useCallback(async (isManualRefresh = false) => {
+    // Safety check: Don't start a new fetch if one is already running
+    if (isFetching.current && !isManualRefresh) {
+        return;
+    }
 
     try {
+      isFetching.current = true;
       const hasData = chartCache.current.size > 0;
 
-      if (isManualRefresh) {
-        // Pull-to-refresh UI is handled separately
-      } else if (!hasData && isMounted.current) {
+      if (!isManualRefresh && !hasData && isMounted.current) {
         setLoading(true);
       }
 
-      let fetched = await fetchAngelIndices();
+      // 1. Fetch main indices list
+      const fetched = await fetchAngelIndices();
+      
       if (!isMounted.current) return;
 
-      // backfill missing tokens via fetchAngelQuotes
-      const missingTokens = SECTORAL_SYMBOLS
-        .filter((s) => !findMarketData(fetched, s))
-        .map((s) => s.token);
-
-      if (missingTokens.length > 0) {
-        try {
-          const extraData = await fetchAngelQuotes(missingTokens);
-          if (extraData && extraData.length > 0) fetched = [...fetched, ...extraData];
-        } catch (subErr) {
-          console.warn('Failed to fetch missing indices backfill', subErr);
-        }
-      }
-
-      if (!isMounted.current) return;
+      /* REMOVED: The "backfill" logic block has been removed.
+         Fetching quotes for missing index tokens often causes 400 Errors 
+         because the Quote API expects Equity tokens, not Index tokens.
+      */
 
       const mapped: IndexModel[] = SECTORAL_SYMBOLS.map((s) => {
         const q = findMarketData(fetched, s);
 
         if (!q) {
+           // Fallback: Try to keep existing data if available
+           const cachedChart = chartCache.current.get(s.token) || [];
+           const oldIndex = indices?.find(i => i.id === s.id);
+           if(oldIndex) return oldIndex;
+
           return {
             ...s,
             price: '-',
@@ -218,7 +216,7 @@ const SectoralIndices: React.FC = () => {
             change: '-',
             percentChange: '-',
             up: false,
-            chart: [],
+            chart: cachedChart,
           };
         }
 
@@ -229,6 +227,7 @@ const SectoralIndices: React.FC = () => {
         const change = netChange > 0 ? `+${netChange.toFixed(2)}` : netChange.toFixed(2);
         const percentChange = `${Math.abs(Number(q.percentChange)).toFixed(2)}%`;
 
+        // Chart Logic
         let chartData = chartCache.current.get(s.token);
         if (!chartData || chartData.length === 0) {
           chartData = generateInitialGraph(q);
@@ -255,42 +254,34 @@ const SectoralIndices: React.FC = () => {
       if (isMounted.current) {
         setIndices(mapped);
       }
-    } catch (err) {
-      console.warn('Failed to fetch indices', err);
-      if (!indices && isMounted.current) setIndices([]);
+    } catch (err: any) {
+      console.warn('Sectoral Indices fetch failed:', err.message || 'Unknown');
     } finally {
-      inFlightRef.current = false;
+      isFetching.current = false;
       if (isMounted.current) {
         setLoading(false);
         setRefreshing(false);
       }
     }
-    // intentionally no dependencies here so the function identity is stable
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [indices]);
 
-  // Initial load & single 4-second interval
+  // Initial Load & Polling
   useEffect(() => {
-    load(); // initial
+    fetchData(); 
 
-    // create exactly one interval
-    timerRef.current = setInterval(() => {
-      if (!inFlightRef.current) load();
-    }, 3000); // 4 seconds
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 3000); // 3 seconds safer polling
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      clearInterval(intervalId);
     };
-    // load is stable due to useCallback with empty deps
-  }, [load]);
+  }, [fetchData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    load(true);
-  }, [load]);
+    fetchData(true);
+  }, [fetchData]);
 
   const renderHeader = () => (
     <View style={styles.headerRow}>

@@ -1,19 +1,18 @@
 import React, { useState, useRef } from 'react';
 import {
-  SafeAreaView,
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
   Platform,
-  StatusBar,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 const VerifyEmailPage = () => {
   const router = useRouter();
@@ -22,7 +21,6 @@ const VerifyEmailPage = () => {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   
-  // State for showing success messages
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
@@ -32,11 +30,9 @@ const VerifyEmailPage = () => {
     newOtp[index] = text;
     setOtp(newOtp);
 
-    // Auto-focus next input
     if (text.length === 1 && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
-    // Auto-focus previous input
     if (text.length === 0 && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
@@ -48,7 +44,6 @@ const VerifyEmailPage = () => {
     }
   };
 
-  // Helper to clear message after 3 seconds
   const showTemporaryMessage = (msg: string) => {
     setSuccessMessage(msg);
     setTimeout(() => {
@@ -57,9 +52,8 @@ const VerifyEmailPage = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -68,25 +62,8 @@ const VerifyEmailPage = () => {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.innerContainer}>
             
-            <View style={styles.header}>
-              <TouchableOpacity 
-                style={styles.backButton} 
-                onPress={() => {
-                  if (step === 'otp') {
-                    setStep('email');
-                    setSuccessMessage(null); // Clear message when going back
-                  } else {
-                    router.back();
-                  }
-                }}
-              >
-                <Ionicons name="chevron-back" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-
             <Text style={styles.title}>Verify Email</Text>
 
-            {/* --- Success Message Display --- */}
             {successMessage && (
               <View style={styles.successContainer}>
                 <Ionicons name="checkmark-circle" size={20} color="#00A884" />
@@ -113,8 +90,6 @@ const VerifyEmailPage = () => {
                   style={styles.primaryBtn}
                   activeOpacity={0.8}
                   onPress={() => {
-                    console.log("Email submitted:", email);
-                    // Show message and switch to OTP step
                     setSuccessMessage(`OTP sent to ${email || 'your email'}`);
                     setStep('otp');
                   }}
@@ -150,12 +125,17 @@ const VerifyEmailPage = () => {
                   activeOpacity={0.8}
                   onPress={() => {
                     const otpCode = otp.join('');
-                    console.log("Verifying OTP:", otpCode);
                     showTemporaryMessage("Email verified successfully!");
-                    
                   }}
                 >
                   <Text style={styles.primaryBtnText}>Verify Email</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={styles.resendBtn}
+                    onPress={() => setStep('email')}
+                >
+                    <Text style={styles.resendText}>Change Email</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -163,69 +143,45 @@ const VerifyEmailPage = () => {
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
   innerContainer: {
     flex: 1,
     paddingHorizontal: 24,
+    paddingTop: 30,
   },
-  
-  header: {
-    marginTop: 10,
-    marginBottom: 10,
-    alignItems: 'flex-start',
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-
   title: {
     fontSize: 22,
     fontWeight: '600',
     color: '#000',
-    marginBottom: 30, // Reduced slightly to make room for message
+    marginBottom: 20,
   },
-
-  // --- Success Message Styles ---
   successContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E8F5E9', // Light green background
+    backgroundColor: '#E8F5E9', 
     padding: 12,
     borderRadius: 8,
     marginBottom: 20,
   },
   successText: {
-    color: '#00A884', // Green text
+    color: '#00A884', 
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 8,
   },
-
   formContainer: {
     flex: 1,
-    marginTop: 100, 
+    marginTop: 80, 
   },
   label: {
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: '600',
     color: '#000',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   input: {
     width: '100%',
@@ -239,7 +195,6 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
     marginBottom: 24,
   },
-
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -257,7 +212,6 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '500',
   },
-
   primaryBtn: {
     width: '100%',
     height: 52,
@@ -271,6 +225,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  resendBtn: {
+      marginTop: 20,
+      alignItems: 'center',
+  },
+  resendText: {
+      color: '#005BC1',
+      fontSize: 14,
+      fontWeight: '500',
+  }
 });
 
 export default VerifyEmailPage;

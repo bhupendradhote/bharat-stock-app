@@ -1,32 +1,17 @@
 import React from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  Platform,
-  StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter, Stack } from 'expo-router';
+import { Stack } from 'expo-router';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 export default function LegalDisclaimer() {
-  const router = useRouter();
-
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="close" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Legal Disclaimer</Text>
-      </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.lastUpdated}>Last Updated: 20 Sep 2025</Text>
@@ -59,35 +44,16 @@ export default function LegalDisclaimer() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  backButton: {
-    padding: 4,
-    marginRight: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
   content: {
-    padding: 20,
+    padding: 10,
     paddingBottom: 40,
+    paddingTop: 20,
+
   },
   lastUpdated: {
     fontSize: 12,

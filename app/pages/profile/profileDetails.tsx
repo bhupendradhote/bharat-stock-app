@@ -1,19 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
   View,
   Text,
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Platform,
-  StatusBar,
+  ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
 import customerProfileServices from '@/services/api/methods/profileService';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 export default function ProfileDetails() {
   const router = useRouter();
@@ -34,7 +31,6 @@ export default function ProfileDetails() {
   const [panMasked, setPanMasked] = useState('');
   const [aadharMasked, setAadharMasked] = useState('');
 
-  // Track verification status if needed (based on email_verified_at)
   const [isEmailVerified, setIsEmailVerified] = useState(false);
 
   useEffect(() => {
@@ -44,19 +40,10 @@ export default function ProfileDetails() {
       try {
         const response: any = await customerProfileServices.getAllProfiles();
 
-        // 1. Console all data as requested
-        console.log('─── Full Profile API Response ───');
-        console.log(JSON.stringify(response, null, 2));
-        console.log('─────────────────────────────────');
-
         if (!mounted) return;
 
-        // 2. Normalize Data Access
-        // Your service returns `response.data?.data`. Based on your JSON, 
-        // the object containing 'user' is the root of this response.
         const userData = response?.user ?? {};
 
-        // 3. Map Fields
         setUsername(userData.name ?? '');
         setEmail(userData.email ?? '');
         setPhone(userData.phone ?? '');
@@ -64,19 +51,13 @@ export default function ProfileDetails() {
         
         setIsEmailVerified(!!userData.email_verified_at);
 
-        // Map Gender (Handle lowercase 'male'/'female' from API)
         const apiGender = userData.gender ? userData.gender.toLowerCase() : 'male';
         setGender(apiGender === 'female' ? 'Female' : 'Male');
 
-        // Map Masked Docs (Fallback to defaults if null in API)
-        // Note: Your JSON has 'pan_card' and 'adhar_card', not '_masked'. 
-        // Adjusting to use what might be available or keeping defaults.
         setPanMasked(userData.pan_card_masked ?? '******XXXX'); 
         setAadharMasked(userData.adhar_card_masked ?? '**** **** XXXX');
 
-        // 4. DOB Parsing (Handle "2025-12-02T00:00:00.000000Z")
         if (userData.dob) {
-          // Take the part before 'T' to get YYYY-MM-DD
           const datePart = userData.dob.split('T')[0];
           const [y, m, d] = datePart.split('-');
           setYear(y ?? '');
@@ -100,28 +81,18 @@ export default function ProfileDetails() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <OtherPagesInc>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#005BC1" />
         </View>
-      </SafeAreaView>
+      </OtherPagesInc>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="chevron-back" size={24} color="#000" />
-        </TouchableOpacity>
-      </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.card}>
@@ -253,29 +224,21 @@ export default function ProfileDetails() {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 }
 
-/* ================== STYLES ================== */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  loadingContainer: {
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center'
   },
-  headerRow: { paddingHorizontal: 16, paddingVertical: 12 },
-  backButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+  scrollContent: { 
+    padding: 10, 
+    paddingTop: 10,
+    paddingBottom: 40 
   },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
   pageTitle: { fontSize: 23, fontWeight: '600', marginBottom: 20 },
   card: {
     backgroundColor: '#fff',

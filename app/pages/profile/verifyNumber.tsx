@@ -1,19 +1,18 @@
 import React, { useState, useRef } from 'react';
 import {
-  SafeAreaView,
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
   Platform,
-  StatusBar,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 const VerifyNumberPage = () => {
   const router = useRouter();
@@ -65,9 +64,8 @@ const VerifyNumberPage = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
       <KeyboardAvoidingView 
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -76,23 +74,6 @@ const VerifyNumberPage = () => {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.innerContainer}>
             
-            {/* Header: Back Button */}
-            <View style={styles.header}>
-              <TouchableOpacity 
-                style={styles.backButton} 
-                onPress={() => {
-                  if (step === 'otp') {
-                    setStep('number');
-                    setSuccessMessage(null); // Clear message when going back
-                  } else {
-                    router.back();
-                  }
-                }}
-              >
-                <Ionicons name="chevron-back" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-
             <Text style={styles.title}>Verify Phone Number</Text>
 
             {/* --- Success Message Display --- */}
@@ -114,7 +95,7 @@ const VerifyNumberPage = () => {
                   placeholderTextColor="#A0A0A0"
                   value={phoneNumber}
                   onChangeText={setPhoneNumber}
-                  keyboardType="phone-pad" // Changed to phone pad
+                  keyboardType="phone-pad"
                   autoCorrect={false}
                 />
 
@@ -123,7 +104,6 @@ const VerifyNumberPage = () => {
                   activeOpacity={0.8}
                   onPress={() => {
                     console.log("Phone Number submitted:", phoneNumber);
-                    // Show message and switch to OTP step
                     setSuccessMessage(`OTP sent to ${phoneNumber || 'your number'}`);
                     setStep('otp');
                   }}
@@ -161,13 +141,17 @@ const VerifyNumberPage = () => {
                   onPress={() => {
                     const otpCode = otp.join('');
                     console.log("Verifying OTP:", otpCode);
-                    
                     showTemporaryMessage("Phone number verified successfully!");
-                    
-                    // Optional: Navigate away logic here
                   }}
                 >
                   <Text style={styles.primaryBtnText}>Verify Number</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={styles.resendBtn}
+                    onPress={() => setStep('number')}
+                >
+                    <Text style={styles.resendText}>Change Number</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -175,44 +159,22 @@ const VerifyNumberPage = () => {
           </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
   innerContainer: {
     flex: 1,
     paddingHorizontal: 24,
+    paddingTop: 30,
   },
-  
-  header: {
-    marginTop: 10,
-    marginBottom: 10,
-    alignItems: 'flex-start',
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-
   title: {
     fontSize: 22,
     fontWeight: '600',
     color: '#000',
-    marginBottom: 30,
+    marginBottom: 20,
   },
-
   successContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -227,16 +189,15 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 8,
   },
-
   formContainer: {
     flex: 1,
-    marginTop: 100, 
+    marginTop: 80, 
   },
   label: {
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: '600',
     color: '#000',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   input: {
     width: '100%',
@@ -250,7 +211,6 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
     marginBottom: 24,
   },
-
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -268,7 +228,6 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '500',
   },
-
   primaryBtn: {
     width: '100%',
     height: 52,
@@ -282,6 +241,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  resendBtn: {
+      marginTop: 20,
+      alignItems: 'center',
+  },
+  resendText: {
+      color: '#005BC1',
+      fontSize: 14,
+      fontWeight: '500',
+  }
 });
 
 export default VerifyNumberPage;

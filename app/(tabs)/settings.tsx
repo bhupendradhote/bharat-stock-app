@@ -48,11 +48,9 @@ const SettingsPage = () => {
     }
   };
 
-  // --- Helper: Deep Extract KYC Data ---
   const getKycData = (user: any) => {
     const kycActions = user?.kyc?.raw_response?.actions;
     if (Array.isArray(kycActions)) {
-      // Find the action that contains digilocker details
       const digilockerData = kycActions.find((a: any) => a.type === 'digilocker');
       return digilockerData?.details || {};
     }
@@ -104,35 +102,29 @@ const SettingsPage = () => {
   const userPhone = userData?.phone || '-';
   const isEmailVerified = !!userData?.email_verified_at;
 
-  // --- Extract KYC Details (Pan, Aadhaar, Image) ---
   const kycDetails = getKycData(userData);
   
-  // 1. Image Logic: User Image -> KYC Base64 Image -> Placeholder
   let profileImageSource = { uri: 'https://randomuser.me/api/portraits/men/32.jpg' };
   
-  if (userData?.image) {
-    profileImageSource = { uri: userData.image };
-  } else if (kycDetails?.aadhaar?.image) {
-    // Append the base64 prefix if missing
+  if (userData?.profile_image_url) {
+    profileImageSource = { uri: userData.profile_image_url };
+  } else if (kycDetails?.aadhaar?.profile_image_url) {
     const base64String = kycDetails.aadhaar.image;
     profileImageSource = { uri: `data:image/jpeg;base64,${base64String}` };
   }
 
-  // 2. Documents Logic: User Field -> KYC Details -> Fallback
   const panNumberRaw = userData?.pan_card || kycDetails?.pan?.id_number;
   const aadharNumberRaw = userData?.adhar_card || kycDetails?.aadhaar?.id_number;
 
   const panMasked = getLast4Chars(panNumberRaw, 'pan');
   const aadharMasked = getLast4Chars(aadharNumberRaw, 'aadhar');
 
-  // --- Subscription Logic ---
   const subscription = userData?.subscription;
   const hasActivePlan = subscription?.status === 'active';
   const planName = userData?.plan?.name || (hasActivePlan ? 'Standard Plan' : 'No Active Plan'); 
   const validityStart = getFormattedDate(subscription?.start_date);
   const validityEnd = getFormattedDate(subscription?.end_date);
 
-  // --- KYC Status Logic ---
   const kycStatus = userData?.kyc?.status || 'pending';
   const isKycVerified = kycStatus === 'verified' || kycStatus === 'approved';
 
@@ -471,12 +463,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionHeading: {
-    fontSize: 22,
+    fontSize: 14,
     fontWeight: '500',
     color: '#000',
   },
   planName: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '600',
     color: '#005BC1',
   },
@@ -486,12 +478,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   planLabel: {
-    fontSize: 16,
+    fontSize: 13,
     color: '#000',
     fontWeight: '500',
   },
   planValue: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '500',
     color: '#374151',
   },

@@ -101,7 +101,7 @@ const MarketCalls = () => {
         const entry = parseFloat(tip.entry_price || '0');
         const target = parseFloat(tip.target_price || '0');
         const sl = parseFloat(tip.stop_loss || '0');
-        const ltp = parseFloat(tip.current_price || tip.entry_price || '0'); 
+        const ltp = parseFloat(tip.current_price || tip.cmp_price || '0'); 
 
         let progress = 0;
         if (target > entry) {
@@ -168,16 +168,13 @@ const MarketCalls = () => {
       handleUpgrade();
       return;
     }
-    router.push({
-      pathname: '/pages/detailPages/marketCallDetails',
-      params: { ...item } as any
-    });
+    // router.push({
+    //   pathname: '/pages/detailPages/marketCallDetails',
+    //   params: { ...item } as any
+    // });
   };
 
-  // --- CHANGED: REDIRECT INSTEAD OF POPUP ---
   const handleUpgrade = () => {
-    // Navigate directly to your subscription or plans page
-    // REPLACE THIS PATH WITH YOUR ACTUAL ROUTE
     router.push('/pages/settingsInnerPages/pricingPlans'); 
   };
 
@@ -370,7 +367,6 @@ const MarketCard: React.FC<MarketCardProps> = ({ highlight = false, data, onPres
                  <Text style={styles.lockedSub}>Unlock hidden potential & entry levels</Text>
                  
                  <TouchableOpacity onPress={onUpgrade} activeOpacity={0.8}>
-                    {/* UPGRADE BUTTON USING EXISTING BLUE GRADIENT */}
                     <LinearGradient
                         colors={['#1E3A8A', '#005BC1']}
                         start={{ x: 0, y: 0 }}
@@ -384,7 +380,6 @@ const MarketCard: React.FC<MarketCardProps> = ({ highlight = false, data, onPres
              </View>
          )}
 
-         {/* Blurred/Hidden Content underneath */}
          <View style={[isLocked && { opacity: 0.1 }]}> 
             <View style={styles.potentialRow}>
                 <Text style={styles.hugePercent}>{isLocked ? '??%' : data.potential}</Text>
@@ -511,7 +506,7 @@ const styles = StyleSheet.create({
 
   /* ================= CARD STYLE ================= */
   cardContainer: {
-    backgroundColor: '#F3F5F9', // Light bluish grey
+    backgroundColor: '#F3F5F9',
     borderRadius: 20,
     paddingTop: 16,
     paddingHorizontal: 16,

@@ -10,7 +10,6 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/app/context/AuthContext';
 
-// Keep the native splash visible until we explicitly hide it.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootLayoutNav() {
@@ -19,12 +18,10 @@ function RootLayoutNav() {
   const segments = useSegments();
   const { userToken, isLoading } = useAuth();
 
-  // animation for smooth fade-in
   const opacity = useRef(new Animated.Value(0)).current;
   const [readyToShow, setReadyToShow] = useState(false);
   const hasHiddenSplashRef = useRef(false);
 
-  // 1) Decide routing after auth resolves
   useEffect(() => {
     if (isLoading) return;
 
@@ -37,21 +34,16 @@ function RootLayoutNav() {
         } else if (!userToken && !inAuthGroup) {
           await router.replace('/pages/auth/welcome');
         } else {
-          // no navigation change necessary
         }
       } catch {
-        // ignore routing errors
       }
 
-      // Ensure the navigation stack has a frame to render before hiding splash
       await new Promise((res) => requestAnimationFrame(() => res(undefined)));
 
       setReadyToShow(true);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, userToken, segments]);
 
-  // 2) When ready, hide splash then fade app in
   useEffect(() => {
     if (!readyToShow) return;
     if (hasHiddenSplashRef.current) return;

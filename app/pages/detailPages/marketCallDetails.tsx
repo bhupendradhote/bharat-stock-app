@@ -1,20 +1,15 @@
-// Location: app/pages/detailPages/marketCallDetails.tsx
-
 import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  Platform,
-  StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 const { width } = Dimensions.get('window');
 const CHART_HEIGHT = 240;
@@ -42,22 +37,12 @@ const MarketCallDetails = () => {
   
   const target2 = (parseFloat(target1.replace(/,/g, '')) * 1.02).toFixed(2); 
 
-  const handleBack = () => {
-    router.back();
-  };
-
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
       
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#000" />
-          </TouchableOpacity>
-        </View>
-
         <View style={styles.titleSection}>
           <View style={styles.iconContainer}>
             <Text style={styles.iconText}>{stockTitle.charAt(0)}</Text>
@@ -199,7 +184,6 @@ const MarketCallDetails = () => {
             </View>
           </View>
 
-          {/* Row 3 */}
           <View style={styles.detailRow}>
             <View style={styles.detailCol}>
               <Text style={styles.detailLabel}>
@@ -215,56 +199,32 @@ const MarketCallDetails = () => {
 
         </View>
 
-        {/* --- Note --- */}
         <View style={styles.noteContainer}>
           <Text style={styles.noteText}>
             <Text style={styles.noteBold}>Note:</Text> Trail SL to ₹640 after Target 1 hit.
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
   scrollContent: {
     paddingBottom: 40,
+    paddingTop: 16,
   },
-  
-  /* Header */
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-
-  /* Title Section */
   titleSection: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     alignItems: 'center',
     marginBottom: 12,
   },
-  /* 4. New Icon Style */
   iconContainer: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#EEF2FF', // Light Indigo
+    backgroundColor: '#EEF2FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -274,7 +234,7 @@ const styles = StyleSheet.create({
   iconText: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#4338CA', // Indigo
+    color: '#4338CA',
   },
   titleInfo: {
     flex: 1,
@@ -303,14 +263,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
-
-  /* Badge */
   badgeContainer: {
     paddingHorizontal: 16,
     marginBottom: 5,
   },
   nseBadge: {
-    backgroundColor: '#005BC1', // Blue
+    backgroundColor: '#005BC1',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 6,
@@ -321,8 +279,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 11,
   },
-
-  /* Chart */
   chartContainer: {
     marginBottom: 24,
     position: 'relative',
@@ -345,7 +301,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    // Shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -369,8 +324,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94A3B8',
   },
-
-  /* Stats Row */
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -394,8 +347,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-
-  /* Time Selector */
   timeSelectorContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -413,7 +364,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   timeButtonActive: {
-    backgroundColor: '#0F172A', // Dark
+    backgroundColor: '#0F172A',
     borderColor: '#0F172A',
   },
   timeText: {
@@ -424,8 +375,6 @@ const styles = StyleSheet.create({
   timeTextActive: {
     color: '#fff',
   },
-
-  /* Details Grid */
   detailsGrid: {
     paddingHorizontal: 16,
     marginBottom: 24,
@@ -461,8 +410,6 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontWeight: '600',
   },
-
-  /* Note */
   noteContainer: {
     paddingHorizontal: 16,
     marginBottom: 20,

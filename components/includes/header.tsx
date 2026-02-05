@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { storage } from '../../services/storage';
-import customerProfileServices from '@/services/api/methods/profileService'; // Import your API service
+import customerProfileServices from '@/services/api/methods/profileService'; 
 
 interface HeaderProps {
   userName?: string;
@@ -11,7 +11,6 @@ interface HeaderProps {
   onMenuPress?: () => void;
   onProfilePress?: () => void;
 }
-
 const Header: React.FC<HeaderProps> = ({
   userName,
   avatarUrl,
@@ -26,7 +25,6 @@ const Header: React.FC<HeaderProps> = ({
       let mounted = true;
 
       const loadUser = async () => {
-        // 1. If props are passed, prioritize them (e.g. parent component controls state)
         if (userName && avatarUrl) {
           if (mounted) {
             setDisplayName(userName);
@@ -36,19 +34,15 @@ const Header: React.FC<HeaderProps> = ({
         }
 
         try {
-          // 2. Fetch latest data from API to ensure we have the KYC image
-          // (Storage might be stale or missing the deep KYC object)
           let userData: any = null;
           
           try {
             const response: any = await customerProfileServices.getAllProfiles();
-            // Normalize response
             userData = response?.user ?? response?.data?.user;
           } catch (apiError) {
             console.warn("Header API fetch failed, falling back to storage", apiError);
           }
 
-          // 3. Fallback to Storage if API failed
           if (!userData) {
             userData = await storage.getUser();
           }
@@ -65,28 +59,20 @@ const Header: React.FC<HeaderProps> = ({
           if (!avatarUrl) {
             let finalImage = "https://i.pravatar.cc/300";
 
-            // Priority 1: Direct Image URL
-            if (userData.image) {
-              finalImage = userData.image;
+            if (userData.profile_image_url) {
+              finalImage = userData.profile_image_url;
             } 
-            // Priority 2: KYC Base64 Image
             else {
-              // Deep extraction safety check
               const kycActions = userData.kyc?.raw_response?.actions;
               if (Array.isArray(kycActions)) {
                 const digilocker = kycActions.find((a: any) => a.type === 'digilocker');
                 const base64Img = digilocker?.details?.aadhaar?.image;
                 
                 if (base64Img) {
-                  // Ensure formatting is correct
                   finalImage = `data:image/jpeg;base64,${base64Img}`;
                 }
               }
             }
-
-            // Debugging: Uncomment if image still fails
-            // console.log("Header Image Resolved To:", finalImage.substring(0, 50) + "...");
-            
             setDisplayAvatar(finalImage);
           }
 

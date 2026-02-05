@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
+// Ensure this path is correct in your project structure
 import { fetchAngelIndices, AngelQuoteRaw } from '../../services/api/methods/marketService';
 
 const { width } = Dimensions.get('window');
@@ -56,11 +57,13 @@ const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
     return <Svg width={chartWidth} height={chartHeight} />;
   }
 
+  // Handle flat lines (no variance)
   const max = Math.max(...data);
   const min = Math.min(...data);
+  const diff = max - min;
 
   const points = data.map((value, index) => {
-    const denom = max - min || 1;
+    const denom = diff === 0 ? 1 : diff; // Prevent divide by zero
     const x = (index / (data.length - 1)) * chartWidth;
     const y = chartHeight - ((value - min) / denom) * (chartHeight - 10); // 10px padding
     return `${x},${y}`;
@@ -96,6 +99,10 @@ const SparklineBase = ({ data, up }: { data: number[]; up: boolean }) => {
 SparklineBase.displayName = 'Sparkline';
 const Sparkline = React.memo(SparklineBase);
 
+/**
+ * Generates a fake chart path if the API returns 0 or missing data.
+ * This ensures the UI doesn't look broken during initial loads or API failures.
+ */
 function generateInitialGraph(quote: AngelQuoteRaw): number[] {
   const open = Number(quote.open || 0);
   const close = Number(quote.ltp || quote.close || open);
@@ -145,6 +152,8 @@ function fmt(n: number) {
 }
 
 const findMarketData = (fetchedData: AngelQuoteRaw[], symbol: typeof SYMBOLS[0]) => {
+  if (!fetchedData || !Array.isArray(fetchedData)) return undefined;
+
   const byToken = fetchedData.find((f) => String(f.symbolToken) === String(symbol.token));
   if (byToken) return byToken;
 
@@ -160,7 +169,6 @@ const findMarketData = (fetchedData: AngelQuoteRaw[], symbol: typeof SYMBOLS[0])
   });
 };
 
-
 const Indices: React.FC = () => {
   const [indices, setIndices] = useState<IndexModel[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -168,6 +176,9 @@ const Indices: React.FC = () => {
   
   const chartCache = useRef<Map<string, number[]>>(new Map());
   const isMounted = useRef(true);
+  
+  // Guard against overlapping requests
+  const isFetching = useRef(false);
 
   useEffect(() => {
     isMounted.current = true;
@@ -176,45 +187,69 @@ const Indices: React.FC = () => {
     };
   }, []);
 
-  const load = useCallback(async (isManualRefresh = false) => {
+  const fetchData = useCallback(async (isManualRefresh = false) => {
+    // Prevent stacking requests: If a request is active and this isn't a forced refresh, skip.
+    if (isFetching.current && !isManualRefresh) {
+      return;
+    }
+
     try {
-      if (isManualRefresh) {
-        setLoading(true);
-      } else if (!indices && isMounted.current) {
+      isFetching.current = true;
+
+      const hasData = chartCache.current.size > 0;
+      
+      // Only show full loading spinner on initial load
+      if (!isManualRefresh && !hasData && isMounted.current) {
         setLoading(true);
       }
 
       const fetched = await fetchAngelIndices();
-
+      
       if (!isMounted.current) return;
 
+      // Map the static symbols to the dynamic API data
       const mapped: IndexModel[] = SYMBOLS.map((s) => {
         const q = findMarketData(fetched, s);
-
+        
+        // Default / Error state for this specific index
         if (!q) {
+          // If we have cached data, preserve it instead of showing '-'
+          const cachedChart = chartCache.current.get(s.token) || [];
+          // If we have previously loaded indices, try to find the old version to keep values stale but visible
+          const oldIndex = indices?.find(i => i.id === s.id);
+          
+          if (oldIndex) return oldIndex;
+
           return {
             ...s,
             price: '-',
             currency: 'INR',
             change: '-',
             up: false,
-            chart: [],
+            chart: cachedChart,
           };
         }
 
         const currentLTP = Number(q.ltp ?? q.close ?? 0);
         const netChange = Number(q.netChange);
+        const percentChange = Number(q.percentChange);
         const up = netChange >= 0;
         const price = fmt(currentLTP);
-        const change = `${netChange.toFixed(2)} (${Number(q.percentChange).toFixed(2)}%)`;
+        const change = `${netChange.toFixed(2)} (${percentChange.toFixed(2)}%)`;
 
+        // --- Chart Logic ---
         let chartData = chartCache.current.get(s.token);
 
         if (!chartData || chartData.length === 0) {
+          // Generate initial fake graph based on OHLC
           chartData = generateInitialGraph(q);
           chartCache.current.set(s.token, chartData);
         } else {
+          // Append new price point to existing chart
           const updatedChart = [...chartData];
+          // Replace last point or push new point? 
+          // Simple sparkline logic: update the last point to reflect current LTP
+          // To make it "move", you would push and shift, but for simple sparklines, updating end is safer.
           updatedChart[updatedChart.length - 1] = currentLTP;
           
           chartCache.current.set(s.token, updatedChart);
@@ -235,94 +270,35 @@ const Indices: React.FC = () => {
       if (isMounted.current) {
         setIndices(mapped);
       }
-    } catch (err) {
-      console.warn('Failed to fetch indices', err);
-      if (!indices && isMounted.current) setIndices([]); 
+    } catch (err: any) {
+      // Log error but don't crash UI
+      console.warn('Indices polling failed:', err.message || 'Unknown error');
     } finally {
+      isFetching.current = false;
       if (isMounted.current) {
         setLoading(false);
         setRefreshing(false);
       }
     }
-  }, [indices]); 
+  }, [indices]);
 
-  const stableLoad = useCallback(async (isManualRefresh = false) => {
-      try {
-        const hasData = chartCache.current.size > 0;
-        
-        if (isManualRefresh) {
-             // Let refresh control handle UI
-        } else if (!hasData && isMounted.current) {
-             setLoading(true);
-        }
-
-        const fetched = await fetchAngelIndices();
-        if (!isMounted.current) return;
-
-        const mapped: IndexModel[] = SYMBOLS.map((s) => {
-          const q = findMarketData(fetched, s);
-          if (!q) {
-            return { ...s, price: '-', currency: 'INR', change: '-', up: false, chart: [] };
-          }
-
-          const currentLTP = Number(q.ltp ?? q.close ?? 0);
-          const netChange = Number(q.netChange);
-          const up = netChange >= 0;
-          const price = fmt(currentLTP);
-          const change = `${netChange.toFixed(2)} (${Number(q.percentChange).toFixed(2)}%)`;
-
-          let chartData = chartCache.current.get(s.token);
-
-          if (!chartData || chartData.length === 0) {
-            chartData = generateInitialGraph(q);
-            chartCache.current.set(s.token, chartData);
-          } else {
-            const updatedChart = [...chartData];
-            updatedChart[updatedChart.length - 1] = currentLTP;
-            chartCache.current.set(s.token, updatedChart);
-            chartData = updatedChart;
-          }
-
-          return {
-            ...s,
-            exchange: q.exchange || s.exchange,
-            price,
-            currency: 'INR',
-            change,
-            up,
-            chart: chartData,
-          };
-        });
-
-        if (isMounted.current) {
-          setIndices(mapped);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch indices', err);
-      } finally {
-        if (isMounted.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-  }, []);
-
+  // Initial Load & Polling Effect
   useEffect(() => {
-    stableLoad(); 
+    fetchData(); 
 
     const intervalId = setInterval(() => {
-      stableLoad();
-    }, 2000);
+      fetchData();
+    }, 3000); // 3 seconds interval
 
     return () => {
       clearInterval(intervalId);
     };
-  }, [stableLoad]);
+  }, [fetchData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    stableLoad(true);
-  }, [stableLoad]);
+    fetchData(true);
+  }, [fetchData]);
 
   return (
     <View style={styles.container}>
@@ -369,6 +345,7 @@ const Indices: React.FC = () => {
             ))}
           </ScrollView>
 
+          {/* Simple Pagination Dots (Visual Only) */}
           <View style={styles.paginationContainer}>
             <View style={[styles.pageDot, styles.pageDotActive]} />
             <View style={styles.pageDot} />

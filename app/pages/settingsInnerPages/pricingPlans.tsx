@@ -1,18 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Platform,
-  StatusBar,
+  ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter, Stack } from 'expo-router';
-import pricingServices from '@/services/api/methods/pricingServices'; // adjust alias/path if needed
+import { Stack } from 'expo-router';
+import pricingServices from '@/services/api/methods/pricingServices';
+import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 interface ApiFeature {
   id?: number | string;
@@ -22,12 +19,11 @@ interface ApiFeature {
 
 interface ApiDuration {
   id?: number | string;
-  duration: string; // e.g. "3 Months"
+  duration: string;
   price: number | string;
   features?: ApiFeature[];
 }
 
-// Backend service plan
 interface ApiServicePlan {
   id: number | string;
   name: string;
@@ -71,7 +67,7 @@ const PlanCard = ({ plan }: { plan: UIPricingPlan }) => {
       <View
         style={[
           styles.card,
-          plan.isRecommended && styles.cardRecommended, // same look as before
+          plan.isRecommended && styles.cardRecommended,
         ]}
       >
         <Text style={styles.planTitle}>{plan.title}</Text>
@@ -80,7 +76,6 @@ const PlanCard = ({ plan }: { plan: UIPricingPlan }) => {
           {activeDuration ? activeDuration.priceText : '—'}{' '}
         </Text>
         <Text style={styles.priceSubText}>({plan.subtitle ?? ''})</Text>
-        {/* Duration Toggles */}
         <View style={styles.durationContainer}>
           {durations.map((d, idx) => {
             const isActive = selectedIndex === idx;
@@ -115,7 +110,6 @@ const PlanCard = ({ plan }: { plan: UIPricingPlan }) => {
               <Text style={styles.featureLabel}>{feat.text ?? '—'}</Text>
 
               <View style={styles.featureValueContainer}>
-                {/* Note: Simply rendering svg_icon string here as per original code */}
                 <Text style={styles.featureLabel}>{feat.svg_icon ?? '—'}</Text>
               </View>
             </View>
@@ -134,9 +128,7 @@ const PlanCard = ({ plan }: { plan: UIPricingPlan }) => {
   );
 };
 
-// --- Main screen ---
 export default function PricingPlans() {
-  const router = useRouter();
   const [plans, setPlans] = useState<UIPricingPlan[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,22 +143,17 @@ export default function PricingPlans() {
       try {
         const response = await pricingServices.getAllPricingPlans();
         
-        // --- FIX START: Cast to any to safely check .data property ---
         const resAny = response as any;
         
         let rawPlans: ApiServicePlan[] = [];
 
         if (Array.isArray(response)) {
-          // It's a direct array
           rawPlans = response;
         } else if (resAny && resAny.data && Array.isArray(resAny.data)) {
-          // It's wrapped in an object { data: [...] }
           rawPlans = resAny.data;
         } else {
-          // Fallback
           rawPlans = [];
         }
-        // --- FIX END ---
 
         const uiPlans: UIPricingPlan[] = rawPlans.map((p) => {
           const durations: UIPricingDuration[] =
@@ -227,17 +214,8 @@ export default function PricingPlans() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Choose a Plan</Text>
-      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {loading ? (
@@ -256,50 +234,19 @@ export default function PricingPlans() {
           plans.map((plan) => <PlanCard key={plan.id} plan={plan} />)
         )}
 
-        {/* Extra space at bottom */}
         <View style={{ height: 20 }} />
       </ScrollView>
-    </SafeAreaView>
+    </OtherPagesInc>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB', // Light gray background
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#F9FAFB', // Match bg
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    marginRight: 16,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000',
-  },
   scrollContent: {
-    padding: 16,
-    paddingTop: 8,
+    padding: 10,
+    paddingTop: 10,
   },
-
-  // --- Card Styles ---
   cardContainer: {
     marginBottom: 20,
-    // Add shadow to the container usually
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -334,10 +281,8 @@ const styles = StyleSheet.create({
     borderColor: '#005BC1',
     borderTopWidth: 0,
   },
-
-  // Content inside Card
   planTitle: {
-    fontSize: 20, //
+    fontSize: 20, 
     fontWeight: '700',
     color: '#000',
     marginBottom: 12,
@@ -359,8 +304,6 @@ const styles = StyleSheet.create({
     color: '#4B5563',
     marginBottom: 16,
   },
-
-  // Duration Toggles
   durationContainer: {
     flexDirection: 'row',
     marginBottom: 20,
@@ -390,8 +333,6 @@ const styles = StyleSheet.create({
   durationTextInactive: {
     color: '#000',
   },
-
-  // Features
   featuresHeader: {
     fontSize: 12,
     textDecorationLine: 'underline',
@@ -423,9 +364,8 @@ const styles = StyleSheet.create({
     color: '#000',
     fontWeight: '500',
   },
-
   purchaseBtn: {
-    backgroundColor: '#005BC1', //
+    backgroundColor: '#005BC1', 
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
