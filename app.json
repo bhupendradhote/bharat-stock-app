@@ -1,60 +1,53 @@
 {
   "expo": {
     "name": "Bharat Stock",
-    "slug": "bharatStock",
+    "slug": "bharat-stock",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/",
-    "scheme": "bharatStock",
+    "icon": "./assets/images/icon.png",
+    "scheme": "bharatstock",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
+      "package": "com.bharatstock.app",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/icon.svg",
-        "backgroundImage": "./assets/images/icon.svg",
-        "monochromeImage": "./assets/images/icon.svg"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.bhupendra_dhote.bharatStock"
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#E6F4FE"
+      }
     },
+
     "web": {
       "output": "static",
-      "favicon": "./assets/images/icon.svg"
+      "favicon": "./assets/images/icon.png"
     },
+
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.svg",
+          "image": "./assets/images/splash.png",
           "resizeMode": "contain",
-          "imageWidth": 160,
-          "backgroundColor": "#FFFFFF",
-          "border": 0,
-          "dark": {
-            "image": "./assets/images/icon.svg",
-            "resizeMode": "contain",
-            "imageWidth": 160,
-            "backgroundColor": "#020617"
-          }
+          "backgroundColor": "#FFFFFF"
         }
       ]
     ],
+
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
+
     "extra": {
-      "router": {},
       "eas": {
         "projectId": "2a1ef606-e726-4c50-9d00-7bebab722e89"
       }
-    }
+    },
+
+    "owner": "bhupendra_dhote"
   }
 }
- 
