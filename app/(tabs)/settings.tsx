@@ -143,7 +143,12 @@ const SettingsPage = () => {
       type: 'fontAwesome',
       route: '/pages/kyc/kycAgreement',
     },
-    { id: 3, icon: 'help-circle-outline', text: 'Support', type: 'ionic' },
+    { id: 3,
+      icon: 'help-circle-outline', 
+      text: 'Support', 
+      type: 'ionic',
+      route: '/pages/support/SupportPage',
+    },
     {
       id: 4,
       icon: 'delete-outline',

@@ -1,21 +1,21 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Dimensions,
   SafeAreaView,
   Platform,
   StatusBar,
   ActivityIndicator,
-  RefreshControl
+  FlatList,
+  RefreshControl,
+  ListRenderItem
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons'; 
-
+import { Ionicons } from '@expo/vector-icons';
 import Search from '@/components/includes/search';
 import customerProfileServices from '@/services/api/methods/profileService';
 
@@ -43,11 +43,10 @@ interface MarketCallData {
 const TABS = ['Intraday', 'Short', 'Long', 'Options', 'Futures'];
 
 // --- Dummy Static Locked Data ---
-// Note: Titles here will be hidden in the UI
 const LOCKED_PREMIUM_CALLS: MarketCallData[] = [
   {
     id: 'locked-1',
-    title: 'BANKNIFTY', // Will be masked
+    title: 'BANKNIFTY',
     date: 'TODAY',
     time: '10:30 AM',
     ltp: '0.00',
@@ -64,7 +63,7 @@ const LOCKED_PREMIUM_CALLS: MarketCallData[] = [
   },
   {
     id: 'locked-2',
-    title: 'RELIANCE', // Will be masked
+    title: 'RELIANCE',
     date: 'TODAY',
     time: '09:15 AM',
     ltp: '0.00',
@@ -81,10 +80,153 @@ const LOCKED_PREMIUM_CALLS: MarketCallData[] = [
   }
 ];
 
+// --- Memoized Card Component ---
+interface MarketCardProps {
+  highlight?: boolean;
+  data: MarketCallData;
+  onPress?: () => void;
+  onUpgrade?: () => void;
+}
+
+// Lint Fix: Used named function inside React.memo
+const MarketCard = React.memo<MarketCardProps>(function MarketCard({ 
+  highlight = false, 
+  data, 
+  onPress, 
+  onUpgrade 
+}) {
+  const isLocked = data.isLocked || false;
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onPress}
+      style={[styles.cardContainer, highlight && { width: width * 0.88, marginRight: 16 }]}
+    >
+      {/* Badge */}
+      <LinearGradient
+        colors={isLocked ? ['#1F2937', '#111827'] : ['#7C3AED', '#9333EA']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.potentialBadge}
+      >
+        <Text style={styles.potentialText}>
+          {isLocked ? 'PREMIUM PICK' : `${data.potential} Potential`}
+        </Text>
+      </LinearGradient>
+
+      <View style={styles.topRightActions}>
+        <View style={[styles.liveBadge, isLocked && { backgroundColor: '#374151' }]}>
+          {!isLocked && <View style={styles.liveDot} />}
+          <Text style={styles.liveText}>{data.status || 'Live'}</Text>
+        </View>
+        {!isLocked && (
+          <TouchableOpacity style={styles.saveButton}>
+            <Text style={styles.saveText}>Save</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.cardHeader}>
+        <View style={[styles.logoBox, isLocked && { backgroundColor: '#374151' }]}>
+          {isLocked ? (
+            <Ionicons name="lock-closed" size={16} color="#9CA3AF" />
+          ) : (
+            <Text style={styles.logoText}>{data.title.substring(0, 3)}</Text>
+          )}
+        </View>
+        <View style={styles.headerTitleCol}>
+          <Text style={[styles.stockTitle, isLocked && { letterSpacing: 3 }]}>
+            {isLocked ? '' : data.title}
+          </Text>
+          <Text style={styles.publishText}>Published on {data.date} • {data.time}</Text>
+        </View>
+
+        {!isLocked && (
+          <View style={styles.headerPriceCol}>
+            <Text style={styles.priceMain}>
+              {Number(data.change) > 0 ? '+' : ''}{data.change}<Text style={styles.priceSmall}>{data.changePercent}</Text>
+            </Text>
+            <Text style={styles.greenLtp}>{data.ltp}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.innerCard}>
+        {isLocked && (
+          <View style={styles.lockedOverlay}>
+            <View style={styles.lockedIconCircle}>
+              <Ionicons name="lock-closed" size={24} color="#1E3A8A" />
+            </View>
+            <Text style={styles.lockedTitle}>Premium Research</Text>
+            <Text style={styles.lockedSub}>Unlock hidden potential & entry levels</Text>
+
+            <TouchableOpacity onPress={onUpgrade} activeOpacity={0.8}>
+              <LinearGradient
+                colors={['#1E3A8A', '#005BC1']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.upgradeBtn}
+              >
+                <Text style={styles.upgradeBtnText}>Upgrade Plan</Text>
+                <Ionicons name="arrow-forward" size={16} color="#fff" style={{ marginLeft: 6 }} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={[isLocked && { opacity: 0.1 }]}>
+          <View style={styles.potentialRow}>
+            <Text style={styles.hugePercent}>{isLocked ? '??%' : data.potential}</Text>
+            <Text style={styles.potentialLabel}>POTENTIAL UPSIDE</Text>
+          </View>
+
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Stop-Loss</Text>
+              <Text style={styles.statValue}>{data.stopLoss}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Entry</Text>
+              <Text style={styles.statValue}>{data.entry}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Target</Text>
+              <Text style={styles.statValue}>{data.target}</Text>
+            </View>
+          </View>
+
+          <View style={styles.sliderWrapper}>
+            <LinearGradient
+              colors={['#EF4444', '#EAB308', '#22C55E']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.sliderTrack}
+            />
+            <View style={[styles.sliderThumb, { left: `${data.sliderValue * 100}%` }]}>
+              <View style={styles.sliderThumbInner} />
+            </View>
+          </View>
+        </View>
+
+        {/* Bottom Pill */}
+        <View style={styles.bottomPill}>
+          <Text style={styles.bottomPillText}>{data.stopLoss}</Text>
+          <View style={styles.pillDivider} />
+          <Text style={styles.bottomPillText}>{data.ltp}</Text>
+          <View style={styles.pillDivider} />
+          <Text style={styles.bottomPillText}>{data.target}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+// --- Main Screen Component ---
 const MarketCalls = () => {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('Intraday');
-  
+
   // Dynamic State
   const [marketCalls, setMarketCalls] = useState<MarketCallData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,13 +243,11 @@ const MarketCalls = () => {
         const entry = parseFloat(tip.entry_price || '0');
         const target = parseFloat(tip.target_price || '0');
         const sl = parseFloat(tip.stop_loss || '0');
-        const ltp = parseFloat(tip.current_price || tip.cmp_price || '0'); 
+        const ltp = parseFloat(tip.current_price || tip.cmp_price || '0');
 
         let progress = 0;
         if (target > entry) {
           progress = (ltp - entry) / (target - entry);
-        } else {
-           progress = 0; 
         }
         const sliderValue = Math.max(0, Math.min(1, progress));
 
@@ -124,8 +264,8 @@ const MarketCalls = () => {
           date: date,
           time: time,
           ltp: ltp.toFixed(2),
-          change: (ltp - entry).toFixed(2), 
-          changePercent: `(${((ltp - entry)/entry * 100).toFixed(2)}%)`,
+          change: (ltp - entry).toFixed(2),
+          changePercent: `(${((ltp - entry) / entry * 100).toFixed(2)}%)`,
           potential: potential,
           stopLoss: sl.toFixed(2),
           entry: entry.toFixed(2),
@@ -137,14 +277,11 @@ const MarketCalls = () => {
       });
 
       const reversedApiCalls = formattedCalls.reverse();
-      
-      // Combine API calls with Dummy Locked calls
       const combinedCalls = [...reversedApiCalls, ...LOCKED_PREMIUM_CALLS];
 
       setMarketCalls(combinedCalls);
     } catch (error) {
       console.error("Failed to fetch market calls", error);
-      // Fallback
       setMarketCalls(LOCKED_PREMIUM_CALLS);
     } finally {
       setLoading(false);
@@ -163,267 +300,133 @@ const MarketCalls = () => {
     fetchMarketCalls();
   };
 
-  const handleCardPress = (item: MarketCallData) => {
+  const handleCardPress = useCallback((item: MarketCallData) => {
     if (item.isLocked) {
       handleUpgrade();
       return;
     }
-    // router.push({
-    //   pathname: '/pages/detailPages/marketCallDetails',
-    //   params: { ...item } as any
-    // });
-  };
+    // router.push({ pathname: '/pages/detailPages/marketCallDetails', params: { ...item } as any });
+  }, []);
 
-  const handleUpgrade = () => {
-    router.push('/pages/settingsInnerPages/pricingPlans'); 
-  };
+  const handleUpgrade = useCallback(() => {
+    router.push('/pages/settingsInnerPages/pricingPlans');
+  }, []);
 
-  const filteredCalls = marketCalls.filter(item => 
-    item.title.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filter Logic
+  const filteredCalls = useMemo(() => {
+    return marketCalls.filter(item =>
+      item.title.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [marketCalls, search]);
 
-  const highlights = filteredCalls.slice(0, 3);
+  const highlights = useMemo(() => filteredCalls.slice(0, 3), [filteredCalls]);
   const allCalls = filteredCalls;
 
+  // --- Render Item for FlatList ---
+  const renderItem: ListRenderItem<MarketCallData> = useCallback(({ item }) => (
+    <View style={{ paddingHorizontal: 16 }}>
+      <MarketCard
+        data={item}
+        onPress={() => handleCardPress(item)}
+        onUpgrade={handleUpgrade}
+      />
+    </View>
+  ), [handleCardPress, handleUpgrade]);
+
+  // --- Header Component (Highlights + Tabs) ---
+  const ListHeader = useCallback(() => (
+    <>
+      <View style={styles.topHeaderContainer}>
+        <Search
+          value={search}
+          onChangeText={(text: string) => setSearch(text)}
+        />
+      </View>
+
+      {/* Highlights Section */}
+      {highlights.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Today’s Market Highlights</Text>
+          <FlatList
+            horizontal
+            data={highlights}
+            keyExtractor={(item) => `highlight-${item.id}`}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingLeft: 16, paddingRight: 8 }}
+            renderItem={({ item }) => (
+              <MarketCard
+                data={item}
+                highlight
+                onPress={() => handleCardPress(item)}
+                onUpgrade={handleUpgrade}
+              />
+            )}
+          />
+
+          <View style={styles.dotsContainer}>
+            <View style={[styles.dot, styles.activeDot]} />
+            <View style={styles.dot} />
+          </View>
+        </>
+      )}
+
+      <Text style={styles.sectionTitle}>Market Calls</Text>
+
+      {/* Tabs */}
+      <FlatList
+        horizontal
+        data={TABS}
+        keyExtractor={(item) => item}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabRow}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            onPress={() => setActiveTab(item)}
+            style={[styles.tabItem, activeTab === item && styles.activeTabItem]}
+          >
+            <Text style={[styles.tabText, activeTab === item && styles.activeTabText]}>
+              {item}
+            </Text>
+          </TouchableOpacity>
+        )}
+      />
+    </>
+  ), [search, highlights, activeTab, handleCardPress, handleUpgrade]);
+
   if (loading && !refreshing) {
-     return (
-       <SafeAreaView style={styles.safeArea}>
-         <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-           <ActivityIndicator size="large" color="#005BC1" />
-         </View>
-       </SafeAreaView>
-     );
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#005BC1" />
+        </View>
+      </SafeAreaView>
+    );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        
-        <View style={styles.topHeaderContainer}>
-             <Search 
-                value={search} 
-                onChangeText={(text: string) => setSearch(text)} 
-             />
-        </View>
-
-        <ScrollView 
-          showsVerticalScrollIndicator={false} 
-          contentContainerStyle={{ paddingBottom: 100 }}
+        <FlatList
+          data={allCalls}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderItem}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No active market calls found.</Text>
+            </View>
+          }
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          
-          {/* Highlights Section */}
-          {highlights.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>Today’s Market Highlights</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingLeft: 16, paddingRight: 8 }}
-              >
-                {highlights.map((item) => (
-                  <MarketCard 
-                    key={item.id} 
-                    data={item} 
-                    highlight 
-                    onPress={() => handleCardPress(item)}
-                    onUpgrade={handleUpgrade} 
-                  />
-                ))}
-              </ScrollView>
-              
-              <View style={styles.dotsContainer}>
-                  <View style={[styles.dot, styles.activeDot]} />
-                  <View style={styles.dot} />
-              </View>
-            </>
-          )}
-
-          <Text style={styles.sectionTitle}>Market Calls</Text>
-
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.tabRow}
-          >
-            {TABS.map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                onPress={() => setActiveTab(tab)}
-                style={[styles.tabItem, activeTab === tab && styles.activeTabItem]}
-              >
-                <Text
-                  style={[
-                    styles.tabText,
-                    activeTab === tab && styles.activeTabText,
-                  ]}
-                >
-                  {tab}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Vertical List */}
-          <View style={{ paddingHorizontal: 16 }}>
-            {allCalls.length > 0 ? (
-              allCalls.map((item) => (
-                <MarketCard 
-                  key={item.id} 
-                  data={item} 
-                  onPress={() => handleCardPress(item)} 
-                  onUpgrade={handleUpgrade}
-                />
-              ))
-            ) : (
-              <View style={styles.emptyContainer}>
-                 <Text style={styles.emptyText}>No active market calls found.</Text>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          // Performance props
+          initialNumToRender={5}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews={true}
+        />
       </View>
     </SafeAreaView>
-  );
-};
-
-/* ===================== CARD COMPONENT ===================== */
-
-interface MarketCardProps {
-  highlight?: boolean;
-  data: MarketCallData;
-  onPress?: () => void;
-  onUpgrade?: () => void;
-}
-
-const MarketCard: React.FC<MarketCardProps> = ({ highlight = false, data, onPress, onUpgrade }) => {
-  const isLocked = data.isLocked || false;
-
-  return (
-    <TouchableOpacity 
-      activeOpacity={0.9}
-      onPress={onPress}
-      style={[styles.cardContainer, highlight && { width: width * 0.88, marginRight: 16 }]}
-    >
-      
-      {/* Badge: Purple for Normal, Dark Grey/Black for Locked */}
-      <LinearGradient
-        colors={isLocked ? ['#1F2937', '#111827'] : ['#7C3AED', '#9333EA']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.potentialBadge}
-      >
-        <Text style={styles.potentialText}>
-            {isLocked ? 'PREMIUM PICK' : `${data.potential} Potential`}
-        </Text>
-      </LinearGradient>
-
-      <View style={styles.topRightActions}>
-        <View style={[styles.liveBadge, isLocked && { backgroundColor: '#374151' }]}>
-          {!isLocked && <View style={styles.liveDot} />}
-          <Text style={styles.liveText}>{data.status || 'Live'}</Text>
-        </View>
-        {!isLocked && (
-            <TouchableOpacity style={styles.saveButton}>
-                <Text style={styles.saveText}>Save</Text>
-            </TouchableOpacity>
-        )}
-      </View>
-
-      <View style={styles.cardHeader}>
-        <View style={[styles.logoBox, isLocked && { backgroundColor: '#374151' }]}>
-          {isLocked ? (
-              <Ionicons name="lock-closed" size={16} color="#9CA3AF" />
-          ) : (
-              <Text style={styles.logoText}>{data.title.substring(0, 3)}</Text>
-          )}
-        </View>
-        <View style={styles.headerTitleCol}>
-           <Text style={[styles.stockTitle, isLocked && { letterSpacing: 3 }]}>
-             {isLocked ? '' : data.title}
-           </Text>
-           <Text style={styles.publishText}>Published on {data.date} • {data.time}</Text>
-        </View>
-        
-        {!isLocked && (
-            <View style={styles.headerPriceCol}>
-                <Text style={styles.priceMain}>
-                    {Number(data.change) > 0 ? '+' : ''}{data.change}<Text style={styles.priceSmall}>{data.changePercent}</Text>
-                </Text>
-                <Text style={styles.greenLtp}>{data.ltp}</Text>
-            </View>
-        )}
-      </View>
-
-      <View style={styles.innerCard}>
-         
-         {isLocked && (
-             <View style={styles.lockedOverlay}>
-                 <View style={styles.lockedIconCircle}>
-                    <Ionicons name="lock-closed" size={24} color="#1E3A8A" />
-                 </View>
-                 <Text style={styles.lockedTitle}>Premium Research</Text>
-                 <Text style={styles.lockedSub}>Unlock hidden potential & entry levels</Text>
-                 
-                 <TouchableOpacity onPress={onUpgrade} activeOpacity={0.8}>
-                    <LinearGradient
-                        colors={['#1E3A8A', '#005BC1']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.upgradeBtn}
-                    >
-                        <Text style={styles.upgradeBtnText}>Upgrade Plan</Text>
-                        <Ionicons name="arrow-forward" size={16} color="#fff" style={{marginLeft: 6}}/>
-                    </LinearGradient>
-                 </TouchableOpacity>
-             </View>
-         )}
-
-         <View style={[isLocked && { opacity: 0.1 }]}> 
-            <View style={styles.potentialRow}>
-                <Text style={styles.hugePercent}>{isLocked ? '??%' : data.potential}</Text>
-                <Text style={styles.potentialLabel}>POTENTIAL UPSIDE</Text>
-            </View>
-
-            <View style={styles.statsGrid}>
-                <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Stop-Loss</Text>
-                    <Text style={styles.statValue}>{data.stopLoss}</Text>
-                </View>
-                <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Entry</Text>
-                    <Text style={styles.statValue}>{data.entry}</Text>
-                </View>
-                <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Target</Text>
-                    <Text style={styles.statValue}>{data.target}</Text>
-                </View>
-            </View>
-
-            <View style={styles.sliderWrapper}>
-                <LinearGradient
-                    colors={['#EF4444', '#EAB308', '#22C55E']} 
-                    start={{ x: 0, y: 0.5 }}
-                    end={{ x: 1, y: 0.5 }}
-                    style={styles.sliderTrack}
-                />
-                <View style={[styles.sliderThumb, { left: `${data.sliderValue * 100}%` }]}>
-                    <View style={styles.sliderThumbInner} />
-                </View>
-            </View>
-         </View>
-
-         {/* Bottom Pill */}
-         <View style={styles.bottomPill}>
-            <Text style={styles.bottomPillText}>{data.stopLoss}</Text>
-            <View style={styles.pillDivider} />
-            <Text style={styles.bottomPillText}>{data.ltp}</Text>
-            <View style={styles.pillDivider} />
-            <Text style={styles.bottomPillText}>{data.target}</Text>
-         </View>
-      </View>
-    </TouchableOpacity>
   );
 };
 
@@ -441,6 +444,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 20,
   },
   emptyText: {
     color: '#9CA3AF',
@@ -601,58 +605,58 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     borderRadius: 16,
     padding: 12,
-    position: 'relative', 
+    position: 'relative',
   },
-  
+
   /* Locked State Styles */
   lockedOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 20,
-      justifyContent: 'center',
-      alignItems: 'center',
-      borderRadius: 14,
-      backgroundColor: 'rgba(255,255,255,0.7)', 
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.7)',
   },
   lockedIconCircle: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: '#E0E7FF', // Light Blue tint
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginBottom: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E0E7FF', // Light Blue tint
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   lockedTitle: {
-      fontSize: 16,
-      fontWeight: '800',
-      color: '#1F2937',
-      marginBottom: 2,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginBottom: 2,
   },
   lockedSub: {
-      fontSize: 12,
-      color: '#6B7280',
-      marginBottom: 12,
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 12,
   },
   upgradeBtn: {
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderRadius: 30,
-      flexDirection: 'row',
-      alignItems: 'center',
-      shadowColor: '#1E3A8A',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 5,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   upgradeBtnText: {
-      color: '#fff',
-      fontWeight: '700',
-      fontSize: 13,
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
   },
 
   /* Normal Content */
@@ -707,7 +711,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     shadowColor: '#000',
     shadowOpacity: 0.1,
-    shadowOffset: {width:0, height:1},
+    shadowOffset: { width: 0, height: 1 },
   },
   sliderThumbInner: {
     width: 8,

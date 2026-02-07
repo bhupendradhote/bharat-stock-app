@@ -8,24 +8,28 @@ export const API_ENDPOINTS = {
     LOGOUT: '/auth/logout',
     PROFILE: '/user',
   },
+
   USER: {
     PROFILE: '/user/profile',
     UPDATE_PROFILE: '/user/update',
   },
+
   MARKET: {
     STOCKS: '/market/stocks',
   },
+
   SERVICE_PLANS: {
     LIST: '/service-plans',
     DETAILS: (id: number | string) => `/service-plans/${id}`,
   },
+
   CUSTOMER_PROFILE: {
     GET_PROFILE: '/customer/profile',
   },
-  // ... News endpoints
+
   NEWS: {
     LIST: '/news',
-    CREATE: '/news', 
+    CREATE: '/news',
     DETAILS: (id: number | string) => `/news/${id}`,
     CATEGORIES: {
       LIST: '/news/categories',
@@ -33,14 +37,36 @@ export const API_ENDPOINTS = {
       DETAILS: (id: number | string) => `/news/categories/${id}`,
     },
   },
-  //  Blogs Endpoints
+
   BLOGS: {
-    LIST: '/blogs',      
-    CREATE: '/blogs',     
-    DETAILS: (id: number | string) => `/blogs/${id}`, 
+    LIST: '/blogs',
+    CREATE: '/blogs',
+    DETAILS: (id: number | string) => `/blogs/${id}`,
   },
-  // Announcements Endpoints
-  Announcements :{
-    GET: '/announcements'
-  }
+
+  // KYC Endpoints (auth:sanctum)
+  KYC: {
+    START: '/kyc/start',
+    STATUS: '/kyc/status',
+  },
+
+  // Mobile Subscription & Razorpay (auth:sanctum)
+  SUBSCRIPTION: {
+    BASE: '/mobile/subscription',
+
+    PLANS: '/mobile/subscription/plans',
+
+    RAZORPAY: {
+      INITIATE: '/mobile/subscription/razorpay/initiate',
+      VERIFY: '/mobile/subscription/razorpay/verify',
+    },
+
+    CURRENT: '/mobile/subscription/current',
+
+    INVOICES: {
+      LIST: '/mobile/subscription/invoices',
+      DOWNLOAD: (id: number | string) =>
+        `/mobile/subscription/invoice/${id}/download`,
+    },
+  },
 };

@@ -1,6 +1,6 @@
-// services/api/methods/marketService.ts
 import axios from 'axios';
 
+// --- Types ---
 
 export type AngelQuoteRaw = {
   exchange: string;
@@ -25,6 +25,7 @@ export type AngelQuoteResponse = {
   message: string;
   data: {
     fetched: AngelQuoteRaw[];
+    unfetched?: any[];
   };
 };
 
@@ -62,63 +63,113 @@ export type AngelHistoryResponse = {
   data: any[];
 };
 
+// NEW: Types for Equity Search
+export type EquitySearchResponse = {
+  status: boolean;
+  data: string[]; // Array of stock names
+};
+
+export type EquityTokenData = {
+  token: string;
+  symbol: string;
+  name: string;
+  exch_seg: string;
+};
+
+export type EquityTokenResponse = {
+  status: boolean;
+  message?: string;
+  data: EquityTokenData | null;
+};
+
 // --- API Config ---
 
 const API_BASE = 'https://bharatstockmarketresearch.com/api/angel';
-const QUOTE_ENDPOINT = `${API_BASE}/quote`;
-const INDICES_ENDPOINT = `${API_BASE}/indices`;
-const MOVERS_ENDPOINT = `${API_BASE}/gainers-losers`;
-const HISTORY_ENDPOINT = `${API_BASE}/history`;
 
-const DEFAULT_TIMEOUT = 10_000;
+const ENDPOINTS = {
+  QUOTE: `${API_BASE}/quote`,
+  INDICES: `${API_BASE}/indices`,
+  MOVERS: `${API_BASE}/gainers-losers`,
+  HISTORY: `${API_BASE}/history`,
+  MARQUEE: `${API_BASE}/nifty50-marquee`,
+  WEEK_52: `${API_BASE}/52-week-data`,
+  // New Equity Routes
+  SEARCH_EQUITY: `${API_BASE}/search-equity-names`,
+  FIND_EQUITY_TOKEN: `${API_BASE}/find-equity-token`,
+};
+
+const DEFAULT_TIMEOUT = 15000; // Increased to 15s to handle backend delays
 const JSON_HEADERS = { Accept: 'application/json' };
 
 // --- Methods ---
 
+/**
+ * Fetch Market Indices (Nifty 50, Bank Nifty, etc.)
+ */
 export async function fetchAngelIndices(): Promise<AngelQuoteRaw[]> {
   try {
-    const res = await axios.get<AngelQuoteResponse>(INDICES_ENDPOINT, {
+    const res = await axios.get<AngelQuoteResponse>(ENDPOINTS.INDICES, {
       headers: JSON_HEADERS,
       timeout: DEFAULT_TIMEOUT,
     });
+
+    if (!res.data?.status) {
+      console.warn('fetchAngelIndices: Backend returned false status');
+      return [];
+    }
     return res.data?.data?.fetched ?? [];
-  } catch (err) {
-    console.error('fetchAngelIndices Error:', err);
-    throw err;
+  } catch (err: any) {
+    // 500 Error Handler: Prevent Red Screen in React Native
+    if (err.response?.status === 500) {
+      console.warn('fetchAngelIndices: Server Error (500). Check Backend Logs (Angel Login Failed).');
+    } else {
+      console.error('fetchAngelIndices Error:', err.message);
+    }
+    return [];
   }
 }
 
+/**
+ * Fetch Nifty 50 Marquee Stocks (Top 20)
+ */
+export async function fetchNifty50Marquee(): Promise<any[]> {
+  try {
+    const res = await axios.get(ENDPOINTS.MARQUEE, {
+      headers: JSON_HEADERS,
+      timeout: DEFAULT_TIMEOUT,
+    });
+    return res.data?.status ? res.data.data : [];
+  } catch (err) {
+    console.warn('fetchNifty50Marquee Failed:', err);
+    return [];
+  }
+}
 
+/**
+ * Fetch Top Gainers and Losers
+ */
 export async function fetchGainersLosers(): Promise<MarketMoversResult> {
   try {
     const config = { headers: JSON_HEADERS, timeout: DEFAULT_TIMEOUT };
     const params = { exchange: 'NSE', expirytype: 'NEAR' };
 
+    // Parallel requests for speed
     const [gainersRes, losersRes] = await Promise.all([
-      axios.get<AngelMoverAPIResponse>(MOVERS_ENDPOINT, { 
+      axios.get<AngelMoverAPIResponse>(ENDPOINTS.MOVERS, { 
         ...config, 
         params: { ...params, datatype: 'GAINERS' } 
-      }).catch(err => {
-        console.warn('Gainers fetch failed:', err.message);
-        return null;
-      }),
+      }).catch(() => null), // Return null instead of throwing
 
-      axios.get<AngelMoverAPIResponse>(MOVERS_ENDPOINT, { 
+      axios.get<AngelMoverAPIResponse>(ENDPOINTS.MOVERS, { 
         ...config, 
         params: { ...params, datatype: 'LOSERS' } 
-      }).catch(err => {
-        console.warn('Losers fetch failed:', err.message);
-        return null;
-      }),
+      }).catch(() => null),
     ]);
 
     const gainers = gainersRes?.data?.data || [];
     const losers = losersRes?.data?.data || [];
 
-    return {
-      gainers,
-      losers
-    };
+    return { gainers, losers };
 
   } catch (err) {
     console.error('fetchGainersLosers Critical Error:', err);
@@ -126,16 +177,20 @@ export async function fetchGainersLosers(): Promise<MarketMoversResult> {
   }
 }
 
-export async function fetchAngelQuotes(
-  symbolTokens?: string[]
-): Promise<AngelQuoteRaw[]> {
+/**
+ * Fetch Live Quotes for specific tokens
+ */
+export async function fetchAngelQuotes(symbolTokens?: string[]): Promise<AngelQuoteRaw[]> {
   try {
-    const params: Record<string, string> = {};
-    if (symbolTokens && symbolTokens.length > 0) {
-      params.symbolTokens = symbolTokens.join(',');
-    }
+    if (!symbolTokens || symbolTokens.length === 0) return [];
 
-    const res = await axios.get<AngelQuoteResponse>(QUOTE_ENDPOINT, {
+    // Backend expects comma-separated string in 'symbol' param
+    const params = { 
+        symbol: symbolTokens.join(','),
+        exchange: 'NSE' 
+    };
+
+    const res = await axios.get<AngelQuoteResponse>(ENDPOINTS.QUOTE, {
       params,
       headers: JSON_HEADERS,
       timeout: DEFAULT_TIMEOUT,
@@ -143,22 +198,17 @@ export async function fetchAngelQuotes(
 
     const fetched = res.data?.data?.fetched ?? [];
     
-    if (!symbolTokens || symbolTokens.length === 0) return fetched;
-
-    const mapped: AngelQuoteRaw[] = [];
-    const fetchedMap = new Map(fetched.map(f => [String(f.symbolToken), f]));
-
-    for (const token of symbolTokens) {
-      const found = fetchedMap.get(String(token));
-      if (found) mapped.push(found);
-    }
-    
-    return mapped.length > 0 ? mapped : fetched;
+    // Ensure we return data in the order requested if possible, or just raw list
+    return fetched;
   } catch (err) {
-    throw err;
+    console.warn('fetchAngelQuotes Error:', err);
+    return [];
   }
 }
 
+/**
+ * Fetch Historical Candle Data
+ */
 export async function fetchAngelHistory(params: {
   symbolToken: string;
   exchange: 'NSE' | 'BSE';
@@ -167,7 +217,7 @@ export async function fetchAngelHistory(params: {
   to: string;
 }): Promise<AngelCandle[]> {
   try {
-    const res = await axios.get<AngelHistoryResponse>(HISTORY_ENDPOINT, {
+    const res = await axios.get<AngelHistoryResponse>(ENDPOINTS.HISTORY, {
       params,
       headers: JSON_HEADERS,
       timeout: DEFAULT_TIMEOUT,
@@ -176,6 +226,7 @@ export async function fetchAngelHistory(params: {
     const data = res.data?.data;
     if (Array.isArray(data)) {
       return data.map((d: any) => {
+        // Angel History returns array [time, open, high, low, close, volume]
         if (Array.isArray(d)) {
           return {
             time: d[0],
@@ -183,7 +234,7 @@ export async function fetchAngelHistory(params: {
             high: d[2],
             low: d[3],
             close: d[4],
-            volume: d[5], // Map volume if available
+            volume: d[5],
           };
         }
         return d;
@@ -192,5 +243,49 @@ export async function fetchAngelHistory(params: {
     return [];
   } catch (err) {
     return [];
+  }
+}
+
+// =========================================================
+// NEW: Equity Search Integration (Matching Backend Routes)
+// =========================================================
+
+/**
+ * Search Equity Script Names (Autocomplete)
+ * Route: /search-equity-names
+ */
+export async function searchEquityNames(query: string): Promise<string[]> {
+  if (query.length < 2) return [];
+  
+  try {
+    const res = await axios.get<EquitySearchResponse>(ENDPOINTS.SEARCH_EQUITY, {
+      params: { query, exchange: 'NSE' },
+      headers: JSON_HEADERS,
+      timeout: 5000,
+    });
+
+    return res.data?.status ? res.data.data : [];
+  } catch (err) {
+    console.warn('searchEquityNames Error:', err);
+    return [];
+  }
+}
+
+
+export async function findEquityToken(name: string): Promise<EquityTokenData | null> {
+  try {
+    const res = await axios.get<EquityTokenResponse>(ENDPOINTS.FIND_EQUITY_TOKEN, {
+      params: { name, exchange: 'NSE' },
+      headers: JSON_HEADERS,
+      timeout: 5000,
+    });
+
+    if (res.data?.status && res.data?.data) {
+      return res.data.data;
+    }
+    return null;
+  } catch (err) {
+    console.warn('findEquityToken Error:', err);
+    return null;
   }
 }

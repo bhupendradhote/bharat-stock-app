@@ -45,21 +45,19 @@ export default function OtherPagesInc({ children }: OtherPagesIncProps) {
           <Ionicons name="chevron-back" size={24} color="#000" />
         </TouchableOpacity>
 
-
+        {/* Updated Route Here */}
         <TouchableOpacity
           style={styles.headerButton}
-          onPress={() => router.push('/')}
+          onPress={() => router.push('/pages/notification/allNotifications')}
           activeOpacity={0.7}
         >
           <Ionicons name="notifications-outline" size={22} color="#000" />
-
         </TouchableOpacity>
       </View>
 
       <View style={styles.contentContainer}>
         {children}
       </View>
-
 
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: activeColor }]}
@@ -120,7 +118,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
-  
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -128,7 +125,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 12,
     backgroundColor: '#F9FAFB',
-   
   },
   headerButton: {
     width: 40,
@@ -145,18 +141,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-
-  // --- Content ---
   contentContainer: {
     flex: 1,
   },
-
-  // --- Bottom Nav Styles ---
   bottomNav: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -178,7 +165,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
-
   fab: {
     position: "absolute",
     bottom: 80, 
@@ -195,8 +181,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     zIndex: 1000,
   },
-
-  // --- Modal Styles ---
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)', 
@@ -219,7 +203,7 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: -40, // Positioned above the modal content
+    top: -40, 
     right: 15,
     zIndex: 99999,
     width: 32,
