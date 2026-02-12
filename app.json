@@ -1,13 +1,12 @@
 {
   "expo": {
     "name": "Bharat Stock",
-    "slug": "bharat-stock",
+    "slug": "bharatStock",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon.svg",
     "scheme": "bharatstock",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
 
     "ios": {
       "supportsTablet": true
@@ -16,14 +15,14 @@
     "android": {
       "package": "com.bharatstock.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
+        "foregroundImage": "./assets/images/icon.svg",
         "backgroundColor": "#E6F4FE"
       }
     },
 
     "web": {
       "output": "static",
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/icon.svg"
     },
 
     "plugins": [
@@ -31,9 +30,17 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash.png",
-          "resizeMode": "contain",
+          "image": "./assets/images/icon.svg",
+          "resizeMode": "cover",
           "backgroundColor": "#FFFFFF"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "newArchEnabled": true
+          }
         }
       ]
     ],

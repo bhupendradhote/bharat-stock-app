@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,147 +7,121 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
-  Image,
-  Dimensions,
+  ActivityIndicator,
+  RefreshControl,
+  Platform,
 } from 'react-native';
-import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
-
-// --- Types ---
-type NotificationType = 'trading_buy' | 'trading_sell' | 'system' | 'offer' | 'payment';
+import notificationServices from '@/services/api/methods/notificationService';
 
 interface NotificationItem {
   id: string;
-  type: NotificationType;
+  type: string;
   title: string;
   message: string;
   time: string;
   read: boolean;
 }
 
-// --- Mock Data ---
-const MOCK_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: '1',
-    type: 'trading_buy',
-    title: 'Buy Alert: TATASTEEL',
-    message: 'Target 150 achieved. Book partial profit now.',
-    time: '2 min ago',
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'payment',
-    title: 'Subscription Successful',
-    message: 'Your payment of ₹2,499 for Premium Plan was successful.',
-    time: '1 hour ago',
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'trading_sell',
-    title: 'Stop Loss Hit: RELIANCE',
-    message: 'Market turning bearish. Exit position at 2400.',
-    time: '3 hours ago',
-    read: true,
-  },
-  {
-    id: '4',
-    type: 'system',
-    title: 'KYC Verified',
-    message: 'Your documents have been approved. You can now start trading.',
-    time: 'Yesterday',
-    read: true,
-  },
-  {
-    id: '5',
-    type: 'offer',
-    title: '20% Off Renewal',
-    message: 'Renew your plan before 10th Feb and save flat 20%.',
-    time: '2 days ago',
-    read: true,
-  },
-];
-
-// --- Components ---
-
-const TabButton = ({ title, isActive, onPress }: { title: string; isActive: boolean; onPress: () => void }) => (
-  <TouchableOpacity
-    style={[styles.tab, isActive && styles.activeTab]}
-    onPress={onPress}
-    activeOpacity={0.7}
-  >
-    <Text style={[styles.tabText, isActive && styles.activeTabText]}>{title}</Text>
-  </TouchableOpacity>
-);
-
 export default function NotificationsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('All');
-  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Filter Logic
-  const getFilteredData = () => {
+  const fetchNotifications = async (isRefreshing = false) => {
+    if (!isRefreshing) setLoading(true);
+    try {
+      const response = await notificationServices.getAllNotifications();
+      
+      const rawData = Array.isArray(response) 
+        ? response 
+        : (response?.data && Array.isArray(response.data)) 
+          ? response.data 
+          : [];
+
+      const formatted: NotificationItem[] = rawData.map((item: any) => ({
+        id: String(item.id),
+        type: item.type || 'General',
+        title: item.title || 'Notification',
+        message: item.message || '',
+        read: item.read_at !== null, 
+        time: item.created_at ? new Date(item.created_at).toLocaleDateString() : '',
+      }));
+
+      setNotifications(formatted);
+    } catch (error) {
+      console.error('Fetch Error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  // ✅ NAVIGATION LOGIC BASED ON TYPE
+  const handleNavigation = (type: string) => {
+    const routeMap: Record<string, any> = {
+      announcement: '/announcements',
+      chat: '/chat',
+      tip: '/market-calls',
+      ticket: '/pages/support/SupportPage',
+    };
+
+    const targetRoute = routeMap[type.toLowerCase()];
+    if (targetRoute) {
+      router.push(targetRoute);
+    }
+  };
+
+  const filterCategories = useMemo(() => {
+    const types = notifications.map(n => n.type);
+    return ['All', ...Array.from(new Set(types))];
+  }, [notifications]);
+
+  const filteredData = useMemo(() => {
     if (activeTab === 'All') return notifications;
-    if (activeTab === 'Trading') return notifications.filter(n => n.type.includes('trading'));
-    if (activeTab === 'System') return notifications.filter(n => ['system', 'payment'].includes(n.type));
-    if (activeTab === 'Offers') return notifications.filter(n => n.type === 'offer');
-    return notifications;
-  };
+    return notifications.filter((n) => n.type === activeTab);
+  }, [activeTab, notifications]);
 
-  const markAllRead = () => {
-    const updated = notifications.map(n => ({ ...n, read: true }));
-    setNotifications(updated);
-  };
-
-  // Icon Helper
-  const getIcon = (type: NotificationType) => {
-    switch (type) {
-      case 'trading_buy':
-        return <Feather name="trending-up" size={20} color="#059669" />;
-      case 'trading_sell':
-        return <Feather name="trending-down" size={20} color="#DC2626" />;
-      case 'payment':
-        return <MaterialIcons name="payment" size={20} color="#005BC1" />;
-      case 'system':
-        return <Feather name="shield" size={20} color="#7C3AED" />;
-      case 'offer':
-        return <MaterialCommunityIcons name="tag-outline" size={20} color="#D97706" />;
-      default:
-        return <Feather name="bell" size={20} color="#666" />;
-    }
-  };
-
-  // Background Color Helper for Icon
-  const getIconBg = (type: NotificationType) => {
-    switch (type) {
-      case 'trading_buy': return '#ECFDF5';
-      case 'trading_sell': return '#FEF2F2';
-      case 'payment': return '#E0F2FE';
-      case 'system': return '#F3E8FF';
-      case 'offer': return '#FFFBEB';
-      default: return '#F3F4F6';
-    }
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchNotifications(true);
+  }, []);
 
   const renderItem = ({ item }: { item: NotificationItem }) => (
-    <TouchableOpacity style={[styles.card, !item.read && styles.unreadCard]} activeOpacity={0.7}>
+    <TouchableOpacity 
+      style={[styles.card, !item.read && styles.unreadCard]} 
+      activeOpacity={0.8}
+      onPress={async () => {
+        if(!item.read) {
+            await notificationServices.markAsRead(item.id);
+            fetchNotifications(true);
+        }
+        handleNavigation(item.type);
+      }}
+    >
       <View style={styles.cardRow}>
-        {/* Icon Section */}
-        <View style={[styles.iconContainer, { backgroundColor: getIconBg(item.type) }]}>
-          {getIcon(item.type)}
+        <View style={styles.iconContainer}>
+            <Feather 
+              name={item.type === 'chat' ? "message-square" : "bell"} 
+              size={18} 
+              color={item.read ? "#999" : "#005BC1"} 
+            />
         </View>
-
-        {/* Content Section */}
         <View style={styles.contentContainer}>
           <View style={styles.headerRow}>
             <Text style={[styles.title, !item.read && styles.unreadTitle]}>{item.title}</Text>
             <Text style={styles.time}>{item.time}</Text>
           </View>
           <Text style={styles.message} numberOfLines={2}>{item.message}</Text>
+          <Text style={styles.typeLabel}>{item.type.replace('_', ' ')}</Text> 
         </View>
-        
-        {/* Unread Dot */}
         {!item.read && <View style={styles.dot} />}
       </View>
     </TouchableOpacity>
@@ -155,214 +129,122 @@ export default function NotificationsPage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <Stack.Screen options={{ headerShown: false }} />
+      <StatusBar barStyle="dark-content" />
 
-      {/* --- Header --- */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="arrow-left" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <TouchableOpacity onPress={markAllRead}>
-          <Text style={styles.markReadText}>Read All</Text>
-        </TouchableOpacity>
+        <View style={{ width: 40 }} /> 
       </View>
 
-      {/* --- Tabs --- */}
       <View style={styles.tabContainer}>
-        <TabButton title="All" isActive={activeTab === 'All'} onPress={() => setActiveTab('All')} />
-        <TabButton title="Trading" isActive={activeTab === 'Trading'} onPress={() => setActiveTab('Trading')} />
-        <TabButton title="System" isActive={activeTab === 'System'} onPress={() => setActiveTab('System')} />
-        <TabButton title="Offers" isActive={activeTab === 'Offers'} onPress={() => setActiveTab('Offers')} />
+        <FlatList
+          horizontal
+          data={filterCategories}
+          keyExtractor={(item) => item}
+          showsHorizontalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <TouchableOpacity 
+              onPress={() => setActiveTab(item)}
+              style={[styles.tab, activeTab === item && styles.activeTab]}
+            >
+              <Text style={[styles.tabText, activeTab === item && styles.activeTabText]}>
+                {item.charAt(0).toUpperCase() + item.slice(1).replace('_', ' ')}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
       </View>
 
-      {/* --- List --- */}
-      <FlatList
-        data={getFilteredData()}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconBg}>
-              <Feather name="bell-off" size={32} color="#9CA3AF" />
+      {loading ? (
+        <ActivityIndicator size="large" color="#005BC1" style={{ marginTop: 50 }} />
+      ) : (
+        <FlatList
+          data={filteredData}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No {activeTab} notifications</Text>
             </View>
-            <Text style={styles.emptyTitle}>No Notifications</Text>
-            <Text style={styles.emptySub}>Youre all caught up! Check back later for updates.</Text>
-          </View>
-        }
-      />
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-const { width } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  // Header
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    paddingTop: 40,
-
+    paddingVertical: 15,
     backgroundColor: '#fff',
+    marginTop: Platform.OS === 'android' ? 30 : 0,
+  },
+  backBtn: { padding: 4 },
+  headerTitle: { fontSize: 18, fontWeight: '700' },
+  tabContainer: {
+    backgroundColor: '#fff',
+    paddingBottom: 10,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111',
-  },
-  markReadText: {
-    fontSize: 14,
-    color: '#005BC1',
-    fontWeight: '600',
-  },
-
-  // Tabs
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    marginBottom: 8,
-  },
   tab: {
-    marginRight: 10,
+    marginRight: 8,
     paddingVertical: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     borderRadius: 20,
     backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: 'transparent',
   },
-  activeTab: {
-    backgroundColor: '#E0F2FE', // Light blue bg
-    borderColor: '#005BC1',
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  activeTabText: {
-    color: '#005BC1',
-    fontWeight: '700',
-  },
-
-  // List & Cards
-  listContent: {
-    padding: 16,
-  },
+  activeTab: { backgroundColor: '#005BC1' },
+  tabText: { fontSize: 13, color: '#6B7280' },
+  activeTabText: { color: '#FFF', fontWeight: '700' },
+  listContent: { padding: 16 },
   card: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    // Soft Shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#F0F0F0',
   },
-  unreadCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E0E7FF',
-    borderLeftWidth: 4,
-    borderLeftColor: '#005BC1',
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
+  unreadCard: { borderLeftWidth: 4, borderLeftColor: '#005BC1' },
+  cardRow: { flexDirection: 'row' },
   iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  contentContainer: {
-    flex: 1,
-    marginRight: 8,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#374151',
-    flex: 1,
-  },
-  unreadTitle: {
-    color: '#000',
-    fontWeight: '700',
-  },
-  time: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginLeft: 8,
-  },
-  message: {
-    fontSize: 13,
-    color: '#6B7280',
-    lineHeight: 18,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EF4444', // Red dot
-    marginTop: 6,
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 80,
-    paddingHorizontal: 40,
-  },
-  emptyIconBg: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 36,
+    height: 36,
+    borderRadius: 8,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginRight: 12,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111',
-    marginBottom: 8,
+  contentContainer: { flex: 1 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  title: { fontSize: 14, fontWeight: '600' },
+  unreadTitle: { fontWeight: '800', color: '#000' },
+  time: { fontSize: 10, color: '#999' },
+  message: { fontSize: 13, color: '#666', lineHeight: 18 },
+  typeLabel: {
+    fontSize: 10,
+    color: '#005BC1',
+    marginTop: 6,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
-  emptySub: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginTop: 5 },
+  emptyState: { alignItems: 'center', marginTop: 100 },
+  emptyTitle: { color: '#999' },
 });

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import pricingServices from '@/services/api/methods/pricingServices';
-import subscriptionService from '@/services/api/methods/subscriptionService';
+import subscriptionService, { ApplyCouponResponse } from '@/services/api/methods/subscriptionService';
 import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 /* ---------------- Types ---------------- */
@@ -25,27 +25,16 @@ interface ApiFeature {
 }
 
 interface ApiDuration {
-  id?: number | string;
+  id: number;
   duration: string;
-  price: number | string;
+  price: number;
   features?: ApiFeature[];
 }
 
-interface ApiServicePlan {
-  id: number | string;
-  name: string;
-  tagline?: string | null;
-  featured?: number | boolean;
-  status?: number | boolean;
-  sort_order?: number;
-  button_text?: string | null;
-  durations?: ApiDuration[];
-}
-
 interface UIPricingDuration {
-  id: number | string;
+  id: number;
   label: string;
-  price: number | string;
+  price: number;
   priceText: string;
   features: ApiFeature[];
 }
@@ -65,14 +54,20 @@ const PlanCard = ({
   plan,
   onPurchase,
   loadingPlanId,
+  discountData,
 }: {
   plan: UIPricingPlan;
   onPurchase: (planId: string, durationIndex: number) => void;
   loadingPlanId: string | null;
+  discountData: ApplyCouponResponse | null;
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const durations = plan.durations ?? [];
   const activeDuration = durations[selectedIndex] ?? durations[0] ?? null;
+
+  // Check if the currently applied coupon applies to THIS specific duration
+  // Note: Backend might return final_price as string "99.00"
+  const showDiscount = discountData && activeDuration && String(discountData.original_price).includes(String(activeDuration.price));
 
   return (
     <View style={styles.cardContainer}>
@@ -85,8 +80,19 @@ const PlanCard = ({
       <View style={[styles.card, plan.isRecommended && styles.cardRecommended]}>
         <Text style={styles.planTitle}>{plan.title}</Text>
 
-        <Text style={styles.priceText}>{activeDuration ? activeDuration.priceText : '—'}</Text>
-        <Text style={styles.priceSubText}>({plan.subtitle ?? ''})</Text>
+        <View>
+          {showDiscount ? (
+            <View>
+              <Text style={[styles.priceText, { color: '#059669' }]}>₹{discountData?.final_price}</Text>
+              <Text style={[styles.priceSubText, { textDecorationLine: 'line-through', color: '#6B7280' }]}>
+                {activeDuration.priceText}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.priceText}>{activeDuration ? activeDuration.priceText : '—'}</Text>
+          )}
+          <Text style={styles.priceSubText}>({plan.subtitle ?? ''})</Text>
+        </View>
 
         <View style={styles.durationContainer}>
           {durations.map((d, idx) => {
@@ -107,21 +113,15 @@ const PlanCard = ({
         </View>
 
         <Text style={styles.featuresHeader}>Features</Text>
-
         <View style={styles.featuresList}>
           {(activeDuration?.features ?? []).map((feat, idx) => (
             <View key={`${plan.id}-feat-${idx}`} style={styles.featureRow}>
               <Text style={styles.featureLabel}>{feat.text ?? '—'}</Text>
-
               <View style={styles.featureValueContainer}>
                 <Text style={styles.featureValueText}>{feat.svg_icon ?? '—'}</Text>
               </View>
             </View>
           ))}
-
-          {(activeDuration?.features ?? []).length === 0 && (
-            <Text style={{ color: '#6B7280', fontSize: 13 }}>No features listed</Text>
-          )}
         </View>
 
         <TouchableOpacity
@@ -133,7 +133,9 @@ const PlanCard = ({
           {loadingPlanId === plan.id ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.purchaseBtnText}>{plan.buttonText ?? 'Purchase Plan'}</Text>
+            <Text style={styles.purchaseBtnText}>
+              {showDiscount ? `Buy for ₹${discountData?.final_price}` : (plan.buttonText ?? 'Purchase Plan')}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -148,125 +150,78 @@ export default function PricingPlans() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
+  
+  // Coupon States
   const [couponInput, setCouponInput] = useState<string>('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [discountDetails, setDiscountDetails] = useState<ApplyCouponResponse | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState<boolean>(false);
 
   const router = useRouter();
 
   useEffect(() => {
-    let mounted = true;
-
-    const fetchPlans = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response: any = await pricingServices.getAllPricingPlans();
-        const resAny = response as any;
-
-        let rawPlans: ApiServicePlan[] = [];
-
-        if (Array.isArray(response)) {
-          rawPlans = response;
-        } else if (resAny && resAny.data && Array.isArray(resAny.data)) {
-          rawPlans = resAny.data;
-        } else {
-          rawPlans = [];
-        }
-
-        const uiPlans: UIPricingPlan[] = rawPlans.map((p) => {
-          const durations: UIPricingDuration[] = (p.durations ?? []).map((d) => {
-            const priceRaw = d.price ?? '';
-            const priceText = typeof priceRaw === 'number' ? `₹${priceRaw}` : `${priceRaw ?? ''}`;
-
-            return {
-              id: d.id ?? '',
-              label: d.duration ?? '—',
-              price: d.price ?? '',
-              priceText,
-              features: d.features ?? [],
-            };
-          });
-
-          const finalDurations = durations.length
-            ? durations
-            : [
-                {
-                  id: '',
-                  label: 'Default',
-                  price: '',
-                  priceText: '',
-                  features: [],
-                },
-              ];
-
-          return {
-            id: String(p.id),
-            title: p.name ?? 'Untitled Plan',
-            subtitle: p.tagline ?? '',
-            isRecommended: Boolean(p.featured),
-            buttonText: p.button_text ?? 'Subscribe Now',
-            durations: finalDurations,
-          };
-        });
-
-        if (mounted) {
-          setPlans(uiPlans);
-        }
-      } catch (err: any) {
-        console.warn('Error fetching plans:', err);
-        if (mounted) {
-          setError(err?.message ?? 'Failed to load plans');
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     fetchPlans();
-
-    return () => {
-      mounted = false;
-    };
   }, []);
 
-  // Apply coupon (tries server-side validate if available, otherwise applies locally)
-  const applyCoupon = async () => {
+  const fetchPlans = async () => {
+    setLoading(true);
+    try {
+      const response: any = await pricingServices.getAllPricingPlans();
+      const rawPlans = Array.isArray(response) ? response : (response?.data ?? []);
+
+      const uiPlans: UIPricingPlan[] = rawPlans.map((p: any) => ({
+        id: String(p.id),
+        title: p.name ?? 'Untitled Plan',
+        subtitle: p.tagline ?? '',
+        isRecommended: Boolean(p.featured),
+        buttonText: p.button_text ?? 'Subscribe Now',
+        durations: (p.durations ?? []).map((d: any) => ({
+          id: d.id,
+          label: d.duration ?? '—',
+          price: d.price ?? 0,
+          priceText: `₹${d.price}`,
+          features: d.features ?? [],
+        })),
+      }));
+
+      setPlans(uiPlans);
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to load plans');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApplyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
     if (!code) {
       Alert.alert('Coupon', 'Please enter a coupon code.');
       return;
     }
 
+    // To validate a coupon via your backend, we need at least ONE duration ID.
+    // We'll use the first duration of the first plan as a probe, or ideally, 
+    // the user should select a plan first. For simplicity, we'll validate against 
+    // the first available duration in the list.
+    const firstDurationId = plans[0]?.durations[0]?.id;
+    if (!firstDurationId) {
+      Alert.alert('Error', 'No plans available to apply coupon against.');
+      return;
+    }
+
     setValidatingCoupon(true);
     try {
-      // If subscriptionService.validateCoupon exists, call it (optional)
-      const svcAny = subscriptionService as any;
-      if (typeof svcAny.validateCoupon === 'function') {
-        // Attempt server-side validation — you can change args if your API expects plan/duration
-        const resp = await svcAny.validateCoupon({ coupon: code });
-        // expect resp.success boolean or similar
-        if (resp?.success) {
-          setAppliedCoupon(code);
-          Keyboard.dismiss();
-          Alert.alert('Coupon Applied', `Coupon "${code}" applied.`);
-        } else {
-          const msg = resp?.message ?? 'Invalid coupon';
-          Alert.alert('Coupon Invalid', msg);
-        }
-      } else {
-        // No validate endpoint: just apply locally
+      const resp = await subscriptionService.applyCoupon(code, Number(firstDurationId));
+      if (resp.success) {
         setAppliedCoupon(code);
+        setDiscountDetails(resp);
         Keyboard.dismiss();
-        Alert.alert('Coupon Applied', `Coupon "${code}" applied (client-side).`);
+        Alert.alert('Success', resp.message || 'Coupon applied successfully!');
       }
     } catch (err: any) {
-      console.warn('validateCoupon error', err);
-      const msg = err?.response?.data?.message ?? err?.message ?? 'Coupon validation failed';
-      Alert.alert('Coupon Error', String(msg));
+      const msg = err?.response?.data?.message || 'Invalid coupon code';
+      Alert.alert('Coupon Error', msg);
+      removeCoupon();
     } finally {
       setValidatingCoupon(false);
     }
@@ -274,94 +229,53 @@ export default function PricingPlans() {
 
   const removeCoupon = () => {
     setAppliedCoupon(null);
+    setDiscountDetails(null);
     setCouponInput('');
   };
 
-  // Handle purchase: initiate Razorpay and open WebView
   const handlePurchase = async (planId: string, durationIndex: number) => {
     if (loadingPlanId) return;
+    
+    const plan = plans.find((p) => p.id === planId);
+    const duration = plan?.durations?.[durationIndex];
+
+    if (!duration?.id) {
+      Alert.alert('Error', 'Invalid duration selected.');
+      return;
+    }
+
     setLoadingPlanId(planId);
 
     try {
-      // Find plan and selected duration (we included duration.id from backend)
-      const plan = plans.find((p) => p.id === planId);
-      const duration = plan?.durations?.[durationIndex];
-
-      if (!duration) {
-        Alert.alert('Error', 'Please select a valid plan duration.');
-        return;
-      }
-
-      if (!duration.id) {
-        Alert.alert('Error', 'Invalid duration selected (missing id).');
-        return;
-      }
-
-      // Call backend with plan_id + duration_id + coupon (coupon optional)
-      // Use `as any` to avoid TypeScript mismatch if your subscriptionService hasn't been updated.
-      const svcAny = subscriptionService as any;
-      const initResp: any = await svcAny.initiateRazorpay(
+      // 1. Initiate Razorpay with Coupon
+      const initResp: any = await subscriptionService.initiateRazorpay(
         Number(planId),
         Number(duration.id),
-        appliedCoupon ?? undefined
+        appliedCoupon
       );
 
-      console.log('initResp', initResp);
-
-      const finalCoupon = appliedCoupon ?? undefined;
-
-      // Hosted checkout: append coupon param if present
-      const checkoutUrl =
-        initResp?.checkout_url ??
-        initResp?.payment_url ??
-        initResp?.redirect_url ??
-        initResp?.url;
-
-      if (checkoutUrl) {
-        const urlWithCoupon =
-          finalCoupon && !checkoutUrl.includes('coupon=')
-            ? `${checkoutUrl}${checkoutUrl.includes('?') ? '&' : '?'}coupon=${encodeURIComponent(finalCoupon)}`
-            : checkoutUrl;
-
-        router.push(
-          `/pages/subscription/RazorpayWebView?url=${encodeURIComponent(urlWithCoupon)}&coupon=${encodeURIComponent(finalCoupon ?? '')}`
-        );
-        return;
-      }
-
-      // Order-based checkout
-      const order_id = initResp?.order_id ?? initResp?.razorpay_order_id;
-      const key = initResp?.key ?? initResp?.razorpay_key ?? initResp?.key_id;
-      const amount = initResp?.amount ?? initResp?.amount_in_paise ?? initResp?.value;
-      const currency = initResp?.currency ?? 'INR';
+      // 2. Extract identifiers for the WebView
+      const order_id = initResp?.order_id;
+      const key = initResp?.key;
+      const amount = initResp?.amount; // paise from backend
 
       if (order_id && key) {
-        const params = `order_id=${encodeURIComponent(String(order_id))}&key=${encodeURIComponent(String(key))}&amount=${encodeURIComponent(String(amount ?? ''))}&currency=${encodeURIComponent(String(currency ?? 'INR'))}${finalCoupon ? `&coupon=${encodeURIComponent(finalCoupon)}` : ''}`;
+        const params = new URLSearchParams({
+          order_id: String(order_id),
+          key: String(key),
+          amount: String(amount),
+          plan_id: String(planId),
+          duration_id: String(duration.id),
+          coupon_code: appliedCoupon || '',
+        }).toString();
+
         router.push(`/pages/subscription/RazorpayWebView?${params}`);
-        return;
-      }
-
-      Alert.alert('Payment', 'Unable to initiate payment. Try again later.');
-    } catch (err: any) {
-      console.warn('initiateRazorpay error', err);
-
-      // Axios-style error handling
-      const status = err?.response?.status;
-      const data = err?.response?.data;
-
-      if (status === 422) {
-        const message = data?.message ?? 'Subscription already in progress or invalid request.';
-        try {
-          const current: any = await subscriptionService.getCurrentSubscription();
-          console.log('Current Subscription:', current);
-        } catch (fallbackErr) {
-          console.warn('Failed to fetch current subscription fallback', fallbackErr);
-        }
-        Alert.alert('Subscription', String(message));
       } else {
-        const message = data?.message ?? err?.message ?? 'Failed to initiate payment';
-        Alert.alert('Payment Error', String(message));
+        Alert.alert('Error', 'Could not initialize payment gateway.');
       }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to initiate purchase';
+      Alert.alert('Payment Error', msg);
     } finally {
       setLoadingPlanId(null);
     }
@@ -372,29 +286,21 @@ export default function PricingPlans() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Coupon Input */}
+        {/* Coupon Section */}
         <View style={styles.couponBox}>
-          <Text style={styles.couponTitle}>Have a coupon?</Text>
-
+          <Text style={styles.couponTitle}>Discount Coupon</Text>
           <View style={styles.couponRow}>
             <TextInput
-              placeholder="Enter coupon code"
+              placeholder="PROMO2024"
               value={couponInput}
               onChangeText={setCouponInput}
               autoCapitalize="characters"
               style={styles.couponInput}
-              editable={!validatingCoupon}
+              editable={!validatingCoupon && !appliedCoupon}
             />
-
             <TouchableOpacity
-              style={[styles.applyBtn, appliedCoupon ? { backgroundColor: '#6B7280' } : undefined]}
-              onPress={() => {
-                if (appliedCoupon) {
-                  removeCoupon();
-                } else {
-                  applyCoupon();
-                }
-              }}
+              style={[styles.applyBtn, appliedCoupon ? { backgroundColor: '#DC2626' } : undefined]}
+              onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
               disabled={validatingCoupon}
             >
               {validatingCoupon ? (
@@ -404,216 +310,86 @@ export default function PricingPlans() {
               )}
             </TouchableOpacity>
           </View>
-
           {appliedCoupon && (
-            <Text style={styles.couponAppliedText}>Applied coupon: {appliedCoupon}</Text>
+            <Text style={styles.couponAppliedText}>
+              ✓ {appliedCoupon} applied! {discountDetails?.coupon?.type === 'percent' ? `${discountDetails.coupon.value}% off` : `₹${discountDetails?.discount} off`}
+            </Text>
           )}
         </View>
 
         {loading ? (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <ActivityIndicator size="small" />
-          </View>
+          <ActivityIndicator style={{ marginTop: 50 }} color="#005BC1" />
         ) : error ? (
-          <View style={{ padding: 20 }}>
-            <Text style={{ color: '#DC2626' }}>{error}</Text>
-          </View>
-        ) : plans.length === 0 ? (
-          <View style={{ padding: 20 }}>
-            <Text style={{ color: '#6B7280' }}>No plans available</Text>
-          </View>
+          <Text style={styles.errorText}>{error}</Text>
         ) : (
           plans.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} onPurchase={handlePurchase} loadingPlanId={loadingPlanId} />
+            <PlanCard 
+              key={plan.id} 
+              plan={plan} 
+              onPurchase={handlePurchase} 
+              loadingPlanId={loadingPlanId}
+              discountData={discountDetails}
+            />
           ))
         )}
-
-        <View style={{ height: 20 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </OtherPagesInc>
   );
 }
 
-/* ---------------- Styles ---------------- */
-
 const styles = StyleSheet.create({
-  scrollContent: {
-    padding: 10,
-    paddingTop: 10,
-  },
+  scrollContent: { padding: 16 },
   couponBox: {
-    backgroundColor: '#F9FAFB',
-    padding: 14,
+    backgroundColor: '#fff',
+    padding: 16,
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    elevation: 2,
   },
-  couponTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  couponRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  couponTitle: { fontSize: 14, fontWeight: '700', marginBottom: 10, color: '#374151' },
+  couponRow: { flexDirection: 'row' },
   couponInput: {
     flex: 1,
     borderWidth: 1,
     borderColor: '#D1D5DB',
     borderRadius: 8,
     paddingHorizontal: 12,
-    height: 40,
+    height: 44,
     marginRight: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#F9FAFB',
   },
-  applyBtn: {
-    backgroundColor: '#005BC1',
-    paddingHorizontal: 16,
-    height: 40,
-    borderRadius: 8,
-    justifyContent: 'center',
-  },
-  applyBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  couponAppliedText: {
-    marginTop: 6,
-    fontSize: 12,
-    color: '#059669',
-    fontWeight: '500',
-  },
-
-  cardContainer: {
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
-    backgroundColor: 'transparent',
-  },
-  recommendedBanner: {
-    backgroundColor: '#005BC1',
-    paddingVertical: 8,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    alignItems: 'center',
-    marginBottom: -2,
-    zIndex: 1,
-  },
-  recommendedText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  cardRecommended: {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderColor: '#005BC1',
-    borderTopWidth: 0,
-  },
-  planTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000',
-    marginBottom: 12,
-  },
-  priceText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#000',
-    marginBottom: 4,
-  },
-  priceSubText: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: '#000',
-    marginVertical: 3,
-  },
-  subscriptionLabel: {
-    fontSize: 13,
-    color: '#4B5563',
-    marginBottom: 16,
-  },
-  durationContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    gap: 10,
-  },
-  durationBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  durationBtnActive: {
-    backgroundColor: '#005BC1',
-    borderColor: '#005BC1',
-  },
-  durationBtnInactive: {
-    backgroundColor: '#fff',
-    borderColor: '#333',
-  },
-  durationText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  durationTextActive: {
-    color: '#fff',
-  },
-  durationTextInactive: {
-    color: '#000',
-  },
-  featuresHeader: {
-    fontSize: 12,
-    textDecorationLine: 'underline',
-    marginBottom: 12,
-    color: '#333',
-  },
-  featuresList: {
-    marginBottom: 20,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  featureLabel: {
-    fontSize: 13,
-    color: '#000',
-    fontWeight: '500',
-    flex: 1,
-    paddingRight: 8,
-  },
-  featureValueContainer: {
-    alignItems: 'flex-end',
-    minWidth: 60,
-  },
-  featureValueText: {
-    fontSize: 12,
-    color: '#000',
-    fontWeight: '500',
-  },
-  purchaseBtn: {
-    backgroundColor: '#005BC1',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  purchaseBtnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  applyBtn: { backgroundColor: '#005BC1', paddingHorizontal: 20, borderRadius: 8, justifyContent: 'center' },
+  applyBtnText: { color: '#fff', fontWeight: '700' },
+  couponAppliedText: { marginTop: 8, fontSize: 13, color: '#059669', fontWeight: '600' },
+  errorText: { color: '#DC2626', textAlign: 'center', marginTop: 20 },
+  
+  // Reuse existing card styles from your snippet...
+  cardContainer: { marginBottom: 24 },
+  recommendedBanner: { backgroundColor: '#005BC1', paddingVertical: 6, borderTopLeftRadius: 16, borderTopRightRadius: 16, alignItems: 'center' },
+  recommendedText: { color: '#fff', fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#E5E7EB' },
+  cardRecommended: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderColor: '#005BC1' },
+  planTitle: { fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  priceText: { fontSize: 28, fontWeight: '800' },
+  priceSubText: { fontSize: 14, color: '#6B7280' },
+  durationContainer: { flexDirection: 'row', marginVertical: 16, flexWrap: 'wrap', gap: 8 },
+  durationBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
+  durationBtnActive: { backgroundColor: '#005BC1', borderColor: '#005BC1' },
+  durationBtnInactive: { backgroundColor: '#fff', borderColor: '#D1D5DB' },
+  durationText: { fontSize: 12, fontWeight: '600' },
+  durationTextActive: { color: '#fff' },
+  durationTextInactive: { color: '#374151' },
+  featuresHeader: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 10 },
+  featuresList: { marginBottom: 20 },
+  featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  featureLabel: { fontSize: 14, color: '#4B5563' },
+  featureValueContainer: { alignItems: 'flex-end' },
+  featureValueText: { fontSize: 14, fontWeight: '600' },
+  purchaseBtn: { backgroundColor: '#005BC1', paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  purchaseBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
