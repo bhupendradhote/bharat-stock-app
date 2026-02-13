@@ -9,13 +9,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
-  Image,
   LayoutAnimation,
   UIManager,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 
-// Enable LayoutAnimation for Android
+// Adjust path as needed based on your folder structure
+import chatServices from '@/services/api/methods/chatServices';
+
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -29,90 +32,203 @@ interface Message {
   text: string;
   sender: 'me' | 'other';
   timestamp: string;
+  rawDate: number;
+  isPending?: boolean;
 }
 
 // --- Constants & Theme ---
 const COLORS = {
-  primary: '#2A2A2A', 
-  accent: '#007AFF',  // Blue for "My" messages
-  headerAvatarBg: '#0D8ABC', // Color for the support avatar background
+  primary: '#2A2A2A',
+  accent: '#007AFF',
+  headerAvatarBg: '#0D8ABC',
   background: '#F5F5F7',
   white: '#FFFFFF',
   grayLight: '#E5E5EA',
   textDark: '#000000',
   textLight: '#8E8E93',
   greenOnline: '#34C759',
+  error: '#FF3B30',
 };
 
 export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
   
-  // Dummy Data with a "Support" context
-  const [messages, setMessages] = useState<Message[]>([
-    { 
-      id: '1', 
-      text: 'Hello! Welcome to Bharat Stock Support. How can I assist you with your portfolio today?', 
-      sender: 'other', 
-      timestamp: '10:00 AM' 
-    },
-  ]);
-
   const flatListRef = useRef<FlatList>(null);
+  
+  // FIX: Use 'number' for React Native intervals
+  const intervalRef = useRef<number | null>(null);
 
-  // Auto-scroll to bottom when messages change
+  // --- 1. Lifecycle: Load & Poll ---
+  useEffect(() => {
+    fetchInitialData();
+
+    // Poll every 3 seconds
+    // We cast the setInterval return to 'unknown' then 'number' to satisfy TS in all envs
+    intervalRef.current = setInterval(() => {
+      fetchLatestMessagesSilently();
+    }, 3000) as unknown as number;
+
+    return () => {
+      if (intervalRef.current !== null) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  // --- 2. Data Fetching ---
+  const fetchInitialData = async () => {
+    try {
+      setLoading(true);
+      await Promise.all([
+        getAndMergeMessages(),
+        chatServices.markAllNotificationsRead().catch(() => {}),
+      ]);
+    } catch (error) {
+      console.error('Error fetching chat:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchLatestMessagesSilently = async () => {
+    await getAndMergeMessages();
+  };
+
+  const getAndMergeMessages = async () => {
+    try {
+      const historyData = await chatServices.getChatHistory();
+      
+      // Debug Log: Check your terminal to see if data arrives
+      // console.log("Fetched History Data:", historyData);
+
+      if (!Array.isArray(historyData)) {
+        console.warn("Expected array for chat history but got:", typeof historyData);
+        return;
+      }
+
+      // Convert Server Data to UI Data
+      const serverMessages = historyData.map(mapToUIMessage);
+
+      setMessages((currentMessages) => {
+        // 1. Preserve pending messages
+        const pendingMessages = currentMessages.filter((m) => m.isPending);
+
+        // 2. Merge Server Messages with Pending Messages
+        const merged = [...serverMessages, ...pendingMessages];
+
+        // 3. Remove duplicates by ID
+        const uniqueMap = new Map();
+        merged.forEach(item => uniqueMap.set(item.id, item));
+        const uniqueMessages = Array.from(uniqueMap.values());
+
+        // 4. Sort by Date
+        uniqueMessages.sort((a, b) => a.rawDate - b.rawDate);
+
+        return uniqueMessages;
+      });
+    } catch (error) {
+      console.log('Polling error:', error);
+    }
+  };
+
+  // --- 3. Mapper Logic ---
+  const mapToUIMessage = (item: any): Message => {
+    // Determine Sender based on 'from_role' ('user' or 'admin')
+    const isMe = item.from_role === 'user';
+
+    // Safe Date Parsing
+    let dateObj = new Date();
+    if (item.created_at) {
+        const parsed = new Date(item.created_at);
+        if (!isNaN(parsed.getTime())) {
+            dateObj = parsed;
+        }
+    }
+
+    return {
+      id: item.id ? item.id.toString() : `server-${Math.random()}`,
+      text: item.message || '', 
+      sender: isMe ? 'me' : 'other',
+      timestamp: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      rawDate: dateObj.getTime(),
+      isPending: false,
+    };
+  };
+
+  // --- 4. Auto Scroll ---
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 200);
     }
-  }, [messages]);
+  }, [messages.length]);
 
-  const sendMessage = () => {
-    if (inputText.trim().length === 0) return;
+  // --- 5. Send Message ---
+  const handleSendMessage = async () => {
+    const textToSend = inputText.trim();
+    if (textToSend.length === 0 || sending) return;
 
-    // Animate the new message entry
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: inputText.trim(),
+    // Optimistic Update
+    const tempId = 'temp-' + Date.now();
+    const now = new Date();
+    const optimisticMessage: Message = {
+      id: tempId,
+      text: textToSend,
       sender: 'me',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      rawDate: now.getTime(),
+      isPending: true,
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [...prev, optimisticMessage]);
     setInputText('');
+    setSending(true);
 
-    // Simulate a reply after 2 seconds
-    setTimeout(() => {
-        const replyMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            text: "Thanks for reaching out. Let me check the market data for you.",
-            sender: 'other',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setMessages((prev) => [...prev, replyMessage]);
-    }, 2000);
+    try {
+      const response = await chatServices.sendMessage({ message: textToSend });
+      
+      if (response) {
+        const realMessage = mapToUIMessage(response);
+        setMessages((prev) => 
+          prev.map((msg) => (msg.id === tempId ? realMessage : msg))
+        );
+      } else {
+        // Fallback: just remove pending flag
+        setMessages((prev) => 
+            prev.map((msg) => (msg.id === tempId ? { ...msg, isPending: false } : msg))
+        );
+      }
+      
+      // Immediate refresh
+      fetchLatestMessagesSilently();
+
+    } catch (error) {
+      console.error('Send failed:', error);
+      Alert.alert('Failed', 'Message could not be sent.');
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+      setInputText(textToSend);
+    } finally {
+      setSending(false);
+    }
   };
 
+  // --- Renderers ---
   const renderItem = ({ item, index }: { item: Message; index: number }) => {
     const isMe = item.sender === 'me';
-    // Logic to check if previous message was from same sender (to group bubbles visually)
     const isNextSame = messages[index + 1]?.sender === item.sender;
 
     return (
       <View style={[
-        styles.messageRow, 
+        styles.messageRow,
         isMe ? styles.rowEnd : styles.rowStart,
-        { marginBottom: isNextSame ? 4 : 16 } // Tighter spacing for grouped messages
+        { marginBottom: isNextSame ? 4 : 16 }
       ]}>
-        
-        {/* Avatar for 'Other' (Chat bubbles) */}
         {!isMe && (
           <View style={styles.avatarContainer}>
-             {/* If it's the last message in a group, show avatar, else invisible spacer */}
             {!isNextSame ? (
                 <View style={[styles.avatarCircle, { backgroundColor: COLORS.headerAvatarBg }]}>
                     <MaterialIcons name="support-agent" size={16} color="#fff" />
@@ -123,20 +239,24 @@ export default function ChatScreen() {
           </View>
         )}
 
-        {/* Message Bubble */}
         <View style={[
-          styles.bubble, 
+          styles.bubble,
           isMe ? styles.bubbleMe : styles.bubbleOther,
-          // Dynamic Border Radius logic
           isMe && !isNextSame ? { borderBottomRightRadius: 4 } : {},
           !isMe && !isNextSame ? { borderBottomLeftRadius: 4 } : {},
+          item.isPending && { opacity: 0.6 }
         ]}>
           <Text style={[styles.messageText, isMe ? styles.textMe : styles.textOther]}>
             {item.text}
           </Text>
-          <Text style={[styles.timestamp, isMe ? styles.timeMe : styles.timeOther]}>
-            {item.timestamp}
-          </Text>
+          <View style={styles.metaContainer}>
+            <Text style={[styles.timestamp, isMe ? styles.timeMe : styles.timeOther]}>
+              {item.timestamp}
+            </Text>
+            {item.isPending && (
+               <Ionicons name="time-outline" size={10} color={COLORS.white} style={{ marginLeft: 4 }} />
+            )}
+          </View>
         </View>
       </View>
     );
@@ -144,50 +264,52 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      
-      {/* 1. Professional Header (UPDATED WITH YOUR SNIPPET) */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          
           <View style={styles.headerLeft}>
-            {/* --- Start User Snippet --- */}
             <View style={styles.headerAvatar}>
                <MaterialIcons name="support-agent" size={24} color="#fff" />
             </View>
             <View style={styles.headerTextContainer}>
                <Text style={styles.headerTitle}>Support</Text>
-               <Text style={styles.headerSubtitle}>Online</Text>
+               <View style={{flexDirection:'row', alignItems:'center'}}>
+                 <View style={{width:8, height:8, borderRadius:4, backgroundColor: COLORS.greenOnline, marginRight: 5}} />
+                 <Text style={styles.headerSubtitle}>Live</Text>
+               </View>
             </View>
-            {/* --- End User Snippet --- */}
           </View>
-
-          {/* Header Actions */}
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.iconButton}>
-                <Ionicons name="call-outline" size={22} color={COLORS.primary} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.iconButton} onPress={fetchInitialData}>
+             <Ionicons name="refresh" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* 2. Chat List */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        keyboardDismissMode="interactive" // Hides keyboard on scroll drag
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-      />
+      {loading && messages.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={COLORS.accent} />
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          keyboardDismissMode="interactive"
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          ListEmptyComponent={
+            <View style={styles.centerContainer}>
+              <Text style={styles.emptyText}>Start a conversation...</Text>
+            </View>
+          }
+        />
+      )}
 
-      {/* 3. Modern Input Area */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0} 
       >
         <View style={styles.inputWrapper}>
-            {/* Attachment Icon (Visual only) */}
             <TouchableOpacity style={styles.attachButton}>
                 <Ionicons name="add" size={28} color={COLORS.accent} />
             </TouchableOpacity>
@@ -209,14 +331,18 @@ export default function ChatScreen() {
                     styles.sendButton, 
                     { backgroundColor: inputText.trim() ? COLORS.accent : COLORS.grayLight }
                 ]} 
-                onPress={sendMessage}
-                disabled={!inputText.trim()}
+                onPress={handleSendMessage}
+                disabled={!inputText.trim() || sending}
             >
-                <Ionicons 
+                {sending ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Ionicons 
                     name="arrow-up" 
                     size={20} 
                     color={inputText.trim() ? COLORS.white : '#A0A0A0'} 
-                />
+                  />
+                )}
             </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -225,12 +351,10 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { color: COLORS.textLight, fontSize: 16 },
   
-  // --- Header Styles ---
   header: {
     backgroundColor: COLORS.white,
     borderBottomWidth: 1,
@@ -243,169 +367,55 @@ const styles = StyleSheet.create({
     elevation: 3,
     zIndex: 10,
   },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  // UPDATED: Header Avatar Container
+  headerContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
   headerAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.headerAvatarBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.headerAvatarBg,
+    justifyContent: 'center', alignItems: 'center', marginRight: 12,
   },
-  headerTextContainer: {
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.textDark,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: COLORS.greenOnline, // Using green to emphasize "Online"
-    fontWeight: '600',
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  iconButton: {
-    padding: 8,
-  },
+  headerTextContainer: { justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: COLORS.textDark },
+  headerSubtitle: { fontSize: 13, color: COLORS.greenOnline, fontWeight: '600' },
+  iconButton: { padding: 8 },
 
-  // --- List Styles ---
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    paddingTop: 20,
-    flexGrow: 1,
-  },
-  messageRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    width: '100%',
-  },
-  rowStart: {
-    justifyContent: 'flex-start',
-  },
-  rowEnd: {
-    justifyContent: 'flex-end',
-  },
+  listContent: { paddingHorizontal: 16, paddingBottom: 20, paddingTop: 20, flexGrow: 1 },
+  messageRow: { flexDirection: 'row', alignItems: 'flex-end', width: '100%' },
+  rowStart: { justifyContent: 'flex-start' },
+  rowEnd: { justifyContent: 'flex-end' },
   
-  // --- Avatar in List ---
-  avatarContainer: {
-    marginRight: 8,
-    width: 28,
-  },
-  avatarCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarSpacer: {
-    width: 28,
-    height: 28,
-  },
+  avatarContainer: { marginRight: 8, width: 28 },
+  avatarCircle: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  avatarSpacer: { width: 28, height: 28 },
 
-  // --- Bubbles ---
   bubble: {
-    maxWidth: '75%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20, // General roundness
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 1,
+    maxWidth: '75%', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 20, 
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 1, elevation: 1,
   },
   bubbleOther: {
     backgroundColor: COLORS.white,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderBottomRightRadius: 20,
-    borderBottomLeftRadius: 4, 
+    borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 20, borderBottomLeftRadius: 4, 
   },
   bubbleMe: {
     backgroundColor: COLORS.accent,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 4,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 4,
   },
   
-  // --- Text ---
-  messageText: {
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  textOther: {
-    color: COLORS.textDark,
-  },
-  textMe: {
-    color: COLORS.white,
-  },
-  timestamp: {
-    fontSize: 10,
-    marginTop: 4,
-    alignSelf: 'flex-end',
-  },
-  timeOther: {
-    color: '#8E8E93',
-  },
-  timeMe: {
-    color: 'rgba(255,255,255,0.7)',
-  },
+  messageText: { fontSize: 16, lineHeight: 22 },
+  textOther: { color: COLORS.textDark },
+  textMe: { color: COLORS.white },
+  metaContainer: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 4 },
+  timestamp: { fontSize: 10 },
+  timeOther: { color: '#8E8E93' },
+  timeMe: { color: 'rgba(255,255,255,0.7)' },
 
-  // --- Input Area ---
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: 10,
-    paddingBottom: Platform.OS === 'ios' ? 10 : 10,
-    backgroundColor: COLORS.white,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    flexDirection: 'row', alignItems: 'flex-end', padding: 10,
+    backgroundColor: COLORS.white, borderTopWidth: 1, borderTopColor: '#F0F0F0',
   },
-  attachButton: {
-    padding: 10,
-    marginBottom: 4,
-  },
+  attachButton: { padding: 10, marginBottom: 4 },
   inputContainer: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    minHeight: 40,
-    justifyContent: 'center',
-    marginBottom: 4, 
+    flex: 1, backgroundColor: '#F2F2F7', borderRadius: 20, paddingHorizontal: 12, marginRight: 8, minHeight: 40, justifyContent: 'center', marginBottom: 4, 
   },
-  input: {
-    fontSize: 16,
-    color: COLORS.textDark,
-    paddingTop: 8,
-    paddingBottom: 8,
-    maxHeight: 100,
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4, 
-  },
+  input: { fontSize: 16, color: COLORS.textDark, paddingTop: 8, paddingBottom: 8, maxHeight: 100 },
+  sendButton: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
 });

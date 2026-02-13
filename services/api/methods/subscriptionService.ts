@@ -85,8 +85,10 @@ export interface Invoice {
   amount: number;
   currency: string;
   invoice_date: string;
-  download_url?: string;
-  subscription?: any;
+  subscription?: {
+    plan?: { name: string };
+    duration?: { duration: string };
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -164,11 +166,14 @@ const subscriptionService = {
   /**
    * 7️⃣ INVOICE LIST
    */
-  getInvoices: async (): Promise<{ success: boolean; data: Invoice[] }> => {
-    const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.INVOICES.LIST);
-    return response.data;
-  },
+  // services/api/methods/subscriptionService.ts
 
+getInvoices: async (): Promise<{ success: boolean; data: Invoice[] }> => {
+  // Ensure API_ENDPOINTS.SUBSCRIPTION.INVOICES.LIST matches your Laravel route
+  // Typically: /api/subscription/invoices
+  const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.INVOICES.LIST);
+  return response.data;
+},
   /**
    * 8️⃣ DOWNLOAD INVOICE (BLOB)
    */
@@ -186,7 +191,9 @@ const subscriptionService = {
   getInvoiceDownloadUrl: async (invoiceId: number | string): Promise<{ success: boolean; download_url: string }> => {
     const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.INVOICES.DOWNLOAD(invoiceId));
     return response.data;
-  }
+  },
+
+
 };
 
 export default subscriptionService;

@@ -73,7 +73,7 @@ export const API_ENDPOINTS = {
   },
 
   // Mobile Subscription & Razorpay (auth:sanctum)
-SUBSCRIPTION: {
+  SUBSCRIPTION: {
     BASE: '/mobile/subscription',
     PLANS: '/mobile/subscription/plans',
     COUPONS: '/mobile/subscription/coupons',
@@ -94,5 +94,15 @@ SUBSCRIPTION: {
     LIST: '/ticket/list',
     STORE: '/ticket/store',
     DETAILS: (id: number | string) => `/ticket/${id}`,
+  },
+
+  // User Chat Api (auth:sanctum)
+  CHAT: {
+    HISTORY: '/chat/history',
+    SEND: '/chat/send',
+    NOTIFICATIONS: {
+      MARK_READ: (id: number | string) => `/chat/notifications/read/${id}`,
+      READ_ALL: '/chat/notifications/read-all',
+    },
   },
 };

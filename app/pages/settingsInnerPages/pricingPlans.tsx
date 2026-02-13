@@ -1,5 +1,5 @@
 // app/PricingPlans.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,13 @@ import {
   Alert,
   TextInput,
   Keyboard,
+  Modal,
+  TouchableWithoutFeedback,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons'; // Assuming you are using Expo
 import pricingServices from '@/services/api/methods/pricingServices';
 import subscriptionService, { ApplyCouponResponse } from '@/services/api/methods/subscriptionService';
 import OtherPagesInc from '@/components/includes/otherPagesInc';
@@ -22,13 +27,6 @@ interface ApiFeature {
   id?: number | string;
   svg_icon?: string | null;
   text?: string | null;
-}
-
-interface ApiDuration {
-  id: number;
-  duration: string;
-  price: number;
-  features?: ApiFeature[];
 }
 
 interface UIPricingDuration {
@@ -48,26 +46,28 @@ interface UIPricingPlan {
   durations: UIPricingDuration[];
 }
 
-/* ---------------- PlanCard ---------------- */
+// Stores the details of the plan the user clicked on
+interface SelectedPurchaseContext {
+  planId: string;
+  planName: string;
+  durationIndex: number;
+  durationId: number;
+  durationLabel: string;
+  originalPrice: number;
+}
+
+/* ---------------- PlanCard Component ---------------- */
 
 const PlanCard = ({
   plan,
-  onPurchase,
-  loadingPlanId,
-  discountData,
+  onSelectPlan,
 }: {
   plan: UIPricingPlan;
-  onPurchase: (planId: string, durationIndex: number) => void;
-  loadingPlanId: string | null;
-  discountData: ApplyCouponResponse | null;
+  onSelectPlan: (plan: UIPricingPlan, durationIndex: number) => void;
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const durations = plan.durations ?? [];
-  const activeDuration = durations[selectedIndex] ?? durations[0] ?? null;
-
-  // Check if the currently applied coupon applies to THIS specific duration
-  // Note: Backend might return final_price as string "99.00"
-  const showDiscount = discountData && activeDuration && String(discountData.original_price).includes(String(activeDuration.price));
+  const activeDuration = durations[selectedIndex] ?? null;
 
   return (
     <View style={styles.cardContainer}>
@@ -80,17 +80,10 @@ const PlanCard = ({
       <View style={[styles.card, plan.isRecommended && styles.cardRecommended]}>
         <Text style={styles.planTitle}>{plan.title}</Text>
 
-        <View>
-          {showDiscount ? (
-            <View>
-              <Text style={[styles.priceText, { color: '#059669' }]}>₹{discountData?.final_price}</Text>
-              <Text style={[styles.priceSubText, { textDecorationLine: 'line-through', color: '#6B7280' }]}>
-                {activeDuration.priceText}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.priceText}>{activeDuration ? activeDuration.priceText : '—'}</Text>
-          )}
+        <View style={styles.priceContainer}>
+          <Text style={styles.priceText}>
+            {activeDuration ? activeDuration.priceText : '—'}
+          </Text>
           <Text style={styles.priceSubText}>({plan.subtitle ?? ''})</Text>
         </View>
 
@@ -102,9 +95,17 @@ const PlanCard = ({
                 key={`${plan.id}-dur-${idx}`}
                 activeOpacity={0.8}
                 onPress={() => setSelectedIndex(idx)}
-                style={[styles.durationBtn, isActive ? styles.durationBtnActive : styles.durationBtnInactive]}
+                style={[
+                  styles.durationBtn,
+                  isActive ? styles.durationBtnActive : styles.durationBtnInactive,
+                ]}
               >
-                <Text style={[styles.durationText, isActive ? styles.durationTextActive : styles.durationTextInactive]}>
+                <Text
+                  style={[
+                    styles.durationText,
+                    isActive ? styles.durationTextActive : styles.durationTextInactive,
+                  ]}
+                >
                   {d.label}
                 </Text>
               </TouchableOpacity>
@@ -118,7 +119,8 @@ const PlanCard = ({
             <View key={`${plan.id}-feat-${idx}`} style={styles.featureRow}>
               <Text style={styles.featureLabel}>{feat.text ?? '—'}</Text>
               <View style={styles.featureValueContainer}>
-                <Text style={styles.featureValueText}>{feat.svg_icon ?? '—'}</Text>
+                {/* Assuming svg_icon is text/emoji for now, usually needs SvgRenderer */}
+                <Text style={styles.featureValueText}>{feat.svg_icon ?? '✓'}</Text>
               </View>
             </View>
           ))}
@@ -127,35 +129,36 @@ const PlanCard = ({
         <TouchableOpacity
           style={styles.purchaseBtn}
           activeOpacity={0.8}
-          onPress={() => onPurchase(plan.id, selectedIndex)}
-          disabled={loadingPlanId !== null}
+          onPress={() => onSelectPlan(plan, selectedIndex)}
         >
-          {loadingPlanId === plan.id ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.purchaseBtnText}>
-              {showDiscount ? `Buy for ₹${discountData?.final_price}` : (plan.buttonText ?? 'Purchase Plan')}
-            </Text>
-          )}
+          <Text style={styles.purchaseBtnText}>
+            {plan.buttonText ?? 'Choose Plan'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-/* ---------------- Screen ---------------- */
+/* ---------------- Main Screen ---------------- */
 
 export default function PricingPlans() {
   const [plans, setPlans] = useState<UIPricingPlan[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
+
+  // Modal & Purchase State
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedContext, setSelectedContext] = useState<SelectedPurchaseContext | null>(null);
   
-  // Coupon States
+  // Coupon States (Scoped to Modal)
   const [couponInput, setCouponInput] = useState<string>('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [discountDetails, setDiscountDetails] = useState<ApplyCouponResponse | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState<boolean>(false);
+  
+  // Payment Processing State
+  const [processingPayment, setProcessingPayment] = useState(false);
 
   const router = useRouter();
 
@@ -163,11 +166,12 @@ export default function PricingPlans() {
     fetchPlans();
   }, []);
 
+  /* --- 1. Fetch Data --- */
   const fetchPlans = async () => {
     setLoading(true);
     try {
       const response: any = await pricingServices.getAllPricingPlans();
-      const rawPlans = Array.isArray(response) ? response : (response?.data ?? []);
+      const rawPlans = Array.isArray(response) ? response : response?.data ?? [];
 
       const uiPlans: UIPricingPlan[] = rawPlans.map((p: any) => ({
         id: String(p.id),
@@ -192,36 +196,61 @@ export default function PricingPlans() {
     }
   };
 
+  /* --- 2. Modal Logic --- */
+
+  const openCheckoutModal = (plan: UIPricingPlan, durationIndex: number) => {
+    const duration = plan.durations[durationIndex];
+    if (!duration) return;
+
+    // Reset coupon state when opening modal
+    setCouponInput('');
+    setAppliedCoupon(null);
+    setDiscountDetails(null);
+    setValidatingCoupon(false);
+
+    setSelectedContext({
+      planId: plan.id,
+      planName: plan.title,
+      durationIndex: durationIndex,
+      durationId: duration.id,
+      durationLabel: duration.label,
+      originalPrice: duration.price,
+    });
+    setModalVisible(true);
+  };
+
+  const closeCheckoutModal = () => {
+    setModalVisible(false);
+    setSelectedContext(null);
+  };
+
+  /* --- 3. Coupon Logic --- */
+
   const handleApplyCoupon = async () => {
+    if (!selectedContext) return;
+    
     const code = couponInput.trim().toUpperCase();
     if (!code) {
       Alert.alert('Coupon', 'Please enter a coupon code.');
       return;
     }
 
-    // To validate a coupon via your backend, we need at least ONE duration ID.
-    // We'll use the first duration of the first plan as a probe, or ideally, 
-    // the user should select a plan first. For simplicity, we'll validate against 
-    // the first available duration in the list.
-    const firstDurationId = plans[0]?.durations[0]?.id;
-    if (!firstDurationId) {
-      Alert.alert('Error', 'No plans available to apply coupon against.');
-      return;
-    }
-
     setValidatingCoupon(true);
     try {
-      const resp = await subscriptionService.applyCoupon(code, Number(firstDurationId));
+      // API call requires code and duration ID
+      const resp = await subscriptionService.applyCoupon(code, selectedContext.durationId);
+      
       if (resp.success) {
         setAppliedCoupon(code);
         setDiscountDetails(resp);
         Keyboard.dismiss();
-        Alert.alert('Success', resp.message || 'Coupon applied successfully!');
       }
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Invalid coupon code';
       Alert.alert('Coupon Error', msg);
-      removeCoupon();
+      setAppliedCoupon(null);
+      setDiscountDetails(null);
+      setCouponInput('');
     } finally {
       setValidatingCoupon(false);
     }
@@ -233,42 +262,35 @@ export default function PricingPlans() {
     setCouponInput('');
   };
 
-  const handlePurchase = async (planId: string, durationIndex: number) => {
-    if (loadingPlanId) return;
-    
-    const plan = plans.find((p) => p.id === planId);
-    const duration = plan?.durations?.[durationIndex];
+  /* --- 4. Payment Logic --- */
 
-    if (!duration?.id) {
-      Alert.alert('Error', 'Invalid duration selected.');
-      return;
-    }
-
-    setLoadingPlanId(planId);
+  const handlePayNow = async () => {
+    if (!selectedContext) return;
+    setProcessingPayment(true);
 
     try {
-      // 1. Initiate Razorpay with Coupon
+      // 1. Initiate Razorpay Order
       const initResp: any = await subscriptionService.initiateRazorpay(
-        Number(planId),
-        Number(duration.id),
+        Number(selectedContext.planId),
+        Number(selectedContext.durationId),
         appliedCoupon
       );
 
-      // 2. Extract identifiers for the WebView
-      const order_id = initResp?.order_id;
-      const key = initResp?.key;
-      const amount = initResp?.amount; // paise from backend
+      const { order_id, key, amount } = initResp || {};
 
       if (order_id && key) {
+        // 2. Prepare params for WebView or SDK
         const params = new URLSearchParams({
           order_id: String(order_id),
           key: String(key),
           amount: String(amount),
-          plan_id: String(planId),
-          duration_id: String(duration.id),
+          plan_id: String(selectedContext.planId),
+          duration_id: String(selectedContext.durationId),
           coupon_code: appliedCoupon || '',
         }).toString();
 
+        // Close modal before navigating
+        setModalVisible(false); 
         router.push(`/pages/subscription/RazorpayWebView?${params}`);
       } else {
         Alert.alert('Error', 'Could not initialize payment gateway.');
@@ -277,45 +299,29 @@ export default function PricingPlans() {
       const msg = err?.response?.data?.message || 'Failed to initiate purchase';
       Alert.alert('Payment Error', msg);
     } finally {
-      setLoadingPlanId(null);
+      setProcessingPayment(false);
     }
   };
+
+  /* --- 5. Calculation Helper --- */
+  const getFinalPrice = () => {
+    if (discountDetails?.final_price) return discountDetails.final_price;
+    return selectedContext?.originalPrice ?? 0;
+  };
+  
+  const getDiscountAmount = () => {
+     if(discountDetails?.discount) return discountDetails.discount;
+     return 0;
+  }
+
+  /* --- Render --- */
 
   return (
     <OtherPagesInc>
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Coupon Section */}
-        <View style={styles.couponBox}>
-          <Text style={styles.couponTitle}>Discount Coupon</Text>
-          <View style={styles.couponRow}>
-            <TextInput
-              placeholder="PROMO2024"
-              value={couponInput}
-              onChangeText={setCouponInput}
-              autoCapitalize="characters"
-              style={styles.couponInput}
-              editable={!validatingCoupon && !appliedCoupon}
-            />
-            <TouchableOpacity
-              style={[styles.applyBtn, appliedCoupon ? { backgroundColor: '#DC2626' } : undefined]}
-              onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
-              disabled={validatingCoupon}
-            >
-              {validatingCoupon ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.applyBtnText}>{appliedCoupon ? 'Remove' : 'Apply'}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-          {appliedCoupon && (
-            <Text style={styles.couponAppliedText}>
-              ✓ {appliedCoupon} applied! {discountDetails?.coupon?.type === 'percent' ? `${discountDetails.coupon.value}% off` : `₹${discountDetails?.discount} off`}
-            </Text>
-          )}
-        </View>
+        {/* Removed the top coupon box - logic is now inside the modal */}
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 50 }} color="#005BC1" />
@@ -323,35 +329,198 @@ export default function PricingPlans() {
           <Text style={styles.errorText}>{error}</Text>
         ) : (
           plans.map((plan) => (
-            <PlanCard 
-              key={plan.id} 
-              plan={plan} 
-              onPurchase={handlePurchase} 
-              loadingPlanId={loadingPlanId}
-              discountData={discountDetails}
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              onSelectPlan={openCheckoutModal}
             />
           ))
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ---------------- CHECKOUT MODAL ---------------- */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={closeCheckoutModal}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            style={styles.modalOverlay}
+          >
+            <View style={styles.modalContent}>
+              {/* Header */}
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Order Summary</Text>
+                <TouchableOpacity onPress={closeCheckoutModal}>
+                  <Ionicons name="close" size={24} color="#374151" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedContext && (
+                <>
+                  {/* Plan Details */}
+                  <View style={styles.summaryBox}>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Plan Name</Text>
+                      <Text style={styles.summaryValue}>{selectedContext.planName}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Duration</Text>
+                      <Text style={styles.summaryValue}>{selectedContext.durationLabel}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Price</Text>
+                      <Text style={styles.summaryValue}>₹{selectedContext.originalPrice}</Text>
+                    </View>
+                  </View>
+
+                  {/* Coupon Section */}
+                  <View style={styles.modalCouponContainer}>
+                    <Text style={styles.modalSectionTitle}>Have a Coupon?</Text>
+                    <View style={styles.couponRow}>
+                      <TextInput
+                        placeholder="Enter Code"
+                        value={couponInput}
+                        onChangeText={setCouponInput}
+                        autoCapitalize="characters"
+                        style={[styles.couponInput, appliedCoupon && { backgroundColor: '#ECFDF5', borderColor: '#059669' }]}
+                        editable={!appliedCoupon && !validatingCoupon}
+                      />
+                      <TouchableOpacity
+                        style={[
+                            styles.applyBtn, 
+                            appliedCoupon ? { backgroundColor: '#DC2626' } : {},
+                            (!couponInput && !appliedCoupon) ? { backgroundColor: '#9CA3AF' } : {}
+                        ]}
+                        onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
+                        disabled={validatingCoupon || (!couponInput && !appliedCoupon)}
+                      >
+                        {validatingCoupon ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.applyBtnText}>{appliedCoupon ? 'Remove' : 'Apply'}</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                    {appliedCoupon && (
+                      <Text style={styles.couponSuccessMsg}>
+                         Coupon applied! You saved ₹{getDiscountAmount()}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.divider} />
+
+                  {/* Final Total */}
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Total Payable</Text>
+                    <Text style={styles.totalAmount}>₹{getFinalPrice()}</Text>
+                  </View>
+
+                  {/* Pay Button */}
+                  <TouchableOpacity
+                    style={styles.payNowBtn}
+                    onPress={handlePayNow}
+                    disabled={processingPayment}
+                  >
+                    {processingPayment ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.payNowBtnText}>Pay Now</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={styles.secureBadge}>
+                    <Ionicons name="lock-closed-outline" size={12} color="#6B7280" />
+                    <Text style={styles.secureText}> Secured by Razorpay</Text>
+                  </View>
+                </>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
     </OtherPagesInc>
   );
 }
 
+/* ---------------- Styles ---------------- */
+
 const styles = StyleSheet.create({
   scrollContent: { padding: 16 },
-  couponBox: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    elevation: 2,
+  errorText: { color: '#DC2626', textAlign: 'center', marginTop: 20 },
+  
+  // Card Styles
+  cardContainer: { marginBottom: 24 },
+  recommendedBanner: { backgroundColor: '#005BC1', paddingVertical: 6, borderTopLeftRadius: 16, borderTopRightRadius: 16, alignItems: 'center' },
+  recommendedText: { color: '#fff', fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#E5E7EB', elevation: 2 },
+  cardRecommended: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderColor: '#005BC1', borderWidth: 1.5 },
+  planTitle: { fontSize: 22, fontWeight: '800', marginBottom: 8, color: '#1F2937' },
+  priceContainer: { marginBottom: 4 },
+  priceText: { fontSize: 28, fontWeight: '800', color: '#005BC1' },
+  priceSubText: { fontSize: 14, color: '#6B7280' },
+  
+  durationContainer: { flexDirection: 'row', marginVertical: 16, flexWrap: 'wrap', gap: 8 },
+  durationBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
+  durationBtnActive: { backgroundColor: '#005BC1', borderColor: '#005BC1' },
+  durationBtnInactive: { backgroundColor: '#F3F4F6', borderColor: '#D1D5DB' },
+  durationText: { fontSize: 12, fontWeight: '600' },
+  durationTextActive: { color: '#fff' },
+  durationTextInactive: { color: '#374151' },
+  
+  featuresHeader: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 10 },
+  featuresList: { marginBottom: 20 },
+  featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  featureLabel: { fontSize: 14, color: '#4B5563' },
+  featureValueContainer: { alignItems: 'flex-end' },
+  featureValueText: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  
+  purchaseBtn: { backgroundColor: '#005BC1', paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  purchaseBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
-  couponTitle: { fontSize: 14, fontWeight: '700', marginBottom: 10, color: '#374151' },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    minHeight: '45%',
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  
+  summaryBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  summaryLabel: { fontSize: 14, color: '#6B7280' },
+  summaryValue: { fontSize: 14, fontWeight: '600', color: '#111827' },
+
+  modalCouponContainer: { marginBottom: 20 },
+  modalSectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#374151' },
   couponRow: { flexDirection: 'row' },
   couponInput: {
     flex: 1,
@@ -361,35 +530,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     marginRight: 10,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#fff',
   },
   applyBtn: { backgroundColor: '#005BC1', paddingHorizontal: 20, borderRadius: 8, justifyContent: 'center' },
   applyBtnText: { color: '#fff', fontWeight: '700' },
-  couponAppliedText: { marginTop: 8, fontSize: 13, color: '#059669', fontWeight: '600' },
-  errorText: { color: '#DC2626', textAlign: 'center', marginTop: 20 },
+  couponSuccessMsg: { color: '#059669', fontSize: 12, marginTop: 4, fontWeight: '600' },
+
+  divider: { height: 1, backgroundColor: '#E5E7EB', marginBottom: 16 },
   
-  // Reuse existing card styles from your snippet...
-  cardContainer: { marginBottom: 24 },
-  recommendedBanner: { backgroundColor: '#005BC1', paddingVertical: 6, borderTopLeftRadius: 16, borderTopRightRadius: 16, alignItems: 'center' },
-  recommendedText: { color: '#fff', fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#E5E7EB' },
-  cardRecommended: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderColor: '#005BC1' },
-  planTitle: { fontSize: 22, fontWeight: '800', marginBottom: 8 },
-  priceText: { fontSize: 28, fontWeight: '800' },
-  priceSubText: { fontSize: 14, color: '#6B7280' },
-  durationContainer: { flexDirection: 'row', marginVertical: 16, flexWrap: 'wrap', gap: 8 },
-  durationBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
-  durationBtnActive: { backgroundColor: '#005BC1', borderColor: '#005BC1' },
-  durationBtnInactive: { backgroundColor: '#fff', borderColor: '#D1D5DB' },
-  durationText: { fontSize: 12, fontWeight: '600' },
-  durationTextActive: { color: '#fff' },
-  durationTextInactive: { color: '#374151' },
-  featuresHeader: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 10 },
-  featuresList: { marginBottom: 20 },
-  featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  featureLabel: { fontSize: 14, color: '#4B5563' },
-  featureValueContainer: { alignItems: 'flex-end' },
-  featureValueText: { fontSize: 14, fontWeight: '600' },
-  purchaseBtn: { backgroundColor: '#005BC1', paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
-  purchaseBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  totalLabel: { fontSize: 18, fontWeight: '700', color: '#111827' },
+  totalAmount: { fontSize: 24, fontWeight: '800', color: '#005BC1' },
+
+  payNowBtn: {
+    backgroundColor: '#059669',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: "#059669",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 4
+  },
+  payNowBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+
+  secureBadge: { flexDirection: 'row', justifyContent: 'center', marginTop: 16, alignItems: 'center' },
+  secureText: { fontSize: 11, color: '#6B7280' },
 });
