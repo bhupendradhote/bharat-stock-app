@@ -14,6 +14,19 @@ export const API_ENDPOINTS = {
     UPDATE_PROFILE: '/user/update',
   },
 
+  // Added Profile Endpoints
+  PROFILE: {
+    GET: '/profile',
+    UPDATE: '/profile/update',
+    OTP_SEND: '/profile/otp/send',
+    OTP_VERIFY: '/profile/otp/verify',
+    PASSWORD: {
+      SEND_OTP: '/profile/password/send-otp',
+      VERIFY_OTP: '/profile/password/verify-otp',
+      UPDATE: '/profile/password/update',
+    },
+  },
+
   // Notification Bell Icon / Quick Actions
   NOTIFICATIONS: {
     UNSEEN: '/notifications/unseen',

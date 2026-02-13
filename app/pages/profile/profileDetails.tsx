@@ -12,11 +12,10 @@ import {
   Platform,
   KeyboardAvoidingView,
   StatusBar,
-  SafeAreaView
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 import customerProfileServices from '@/services/api/methods/profileService';
 import OtherPagesInc from '@/components/includes/otherPagesInc';
@@ -74,7 +73,7 @@ export default function ProfileDetails() {
     let mounted = true;
     const fetchProfile = async () => {
       try {
-        const response: any = await customerProfileServices.getAllProfiles();
+        const response: any = await customerProfileServices.getProfile();
         if (!mounted) return;
 
         const userData = response?.user ?? response?.data?.user ?? {};
@@ -89,6 +88,7 @@ export default function ProfileDetails() {
         const apiGender = userData.gender ? userData.gender.toLowerCase() : 'male';
         setGender(apiGender === 'female' ? 'Female' : 'Male');
 
+        // Check for profile_image_url (from Spatie Media Library)
         if (userData.profile_image_url) {
             setProfileImage(userData.profile_image_url);
         } else if (kycDetails?.aadhaar?.profile_image_url) {
@@ -149,25 +149,39 @@ export default function ProfileDetails() {
         }
 
         const formData = new FormData();
+        
         formData.append('name', username);
-        formData.append('gender', gender);
+        formData.append('gender', gender.toLowerCase()); 
         if(dob) formData.append('dob', dob);
         formData.append('pan_card', panNumber);
         formData.append('adhar_card', aadharNumber);
         
+        // Handle image strictly for React Native & Spatie Media Library
         if (profileImage && !profileImage.startsWith('http') && !profileImage.startsWith('data:')) {
-            const filename = profileImage.split('/').pop();
-            const match = /\.(\w+)$/.exec(filename || '');
-            const type = match ? `image/${match[1]}` : `image/jpeg`;
+            // Fix iOS path issue
+            const localUri = Platform.OS === 'ios' ? profileImage.replace('file://', '') : profileImage;
+            
+            // Extract filename and strictly define MIME type
+            const filename = localUri.split('/').pop() || 'profile_image.jpg';
+            const extension = filename.split('.').pop()?.toLowerCase();
+            let mimeType = 'image/jpeg';
+            if (extension === 'png') mimeType = 'image/png';
+            else if (extension === 'gif') mimeType = 'image/gif';
+            else if (extension === 'webp') mimeType = 'image/webp';
+            
             // @ts-ignore
-            formData.append('profile_image', { uri: profileImage, name: filename, type });
+            formData.append('profile_image', { 
+                uri: localUri, 
+                name: filename, 
+                type: mimeType 
+            });
         }
 
-        // await customerProfileServices.updateProfile(formData);
-        await new Promise(resolve => setTimeout(resolve, 1500)); 
+        await customerProfileServices.updateGeneralProfile(formData);
+        
         Alert.alert('Success', 'Profile updated successfully!');
     } catch (error) {
-        console.error(error);
+        console.error('Update Error:', error);
         Alert.alert('Error', 'Failed to update profile.');
     } finally {
         setSaving(false);
@@ -199,7 +213,6 @@ export default function ProfileDetails() {
             
             {/* --- Header / Avatar --- */}
             <View style={styles.headerContainer}>
-                
                 <View style={styles.avatarSection}>
                     <TouchableOpacity onPress={pickImage} activeOpacity={0.8} style={styles.avatarWrapper}>
                         <Image 
@@ -328,6 +341,21 @@ export default function ProfileDetails() {
                                 editable={false}
                             />
                             <TouchableOpacity onPress={() => router.push('/pages/profile/verifyNumber')}>
+                                <Text style={styles.actionLink}>Change</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Change Password</Text>
+                        <View style={[styles.input, styles.inputWithAction]}>
+                            <TextInput 
+                                style={{ flex: 1, color: COLORS.textSub }} 
+                                value='************' 
+                                editable={false}
+                            />
+                            <TouchableOpacity onPress={() => router.push('/pages/profile/changePassword')}>
                                 <Text style={styles.actionLink}>Change</Text>
                             </TouchableOpacity>
                         </View>

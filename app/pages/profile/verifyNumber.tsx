@@ -9,9 +9,14 @@ import {
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
+
+// Make sure this path is correct for your project structure
+import customerProfileServices from '@/services/api/methods/profileService'; 
 import OtherPagesInc from '@/components/includes/otherPagesInc';
 
 const VerifyNumberPage = () => {
@@ -26,8 +31,12 @@ const VerifyNumberPage = () => {
   // State for OTP (Array of 6 strings)
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   
-  // State for showing success messages
+  // UI States
+  const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // State to hold any session/reference token returned by the backend
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Refs for OTP inputs
   const inputRefs = useRef<Array<TextInput | null>>([]);
@@ -61,6 +70,82 @@ const VerifyNumberPage = () => {
     setTimeout(() => {
       setSuccessMessage(null);
     }, 3000);
+  };
+
+  // --- API Integrations ---
+
+  const handleSendOtp = async () => {
+    // Strip spaces in case the user types "+91 98765 43210"
+    const cleanPhone = phoneNumber.replace(/\s+/g, '');
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      Alert.alert('Invalid Input', 'Please enter a valid phone number.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response: any = await customerProfileServices.sendUpdateOtp({ 
+        type: 'phone', 
+        value: cleanPhone 
+      });
+      
+      // DEBUG: Check terminal to see if backend returns a session_id or token
+      console.log('SEND OTP RESPONSE:', response);
+
+      // Save token if the backend provides one to track the OTP session
+      if (response?.session_id || response?.token) {
+          setSessionToken(response.session_id || response.token);
+      }
+      
+      setSuccessMessage(`OTP sent to ${cleanPhone}`);
+      setStep('otp');
+    } catch (error: any) {
+      console.error('Send OTP Error:', error.response?.data || error.message);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to send OTP. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const cleanPhone = phoneNumber.replace(/\s+/g, '');
+    const otpCode = otp.join('');
+    
+    if (otpCode.length < 6) {
+      Alert.alert('Invalid OTP', 'Please enter the complete 6-digit OTP.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Build base payload
+      const verifyPayload: any = { 
+        type: 'phone', 
+        value: cleanPhone, 
+        otp: otpCode 
+      };
+
+      // Append token if we received one in the previous step
+      if (sessionToken) {
+          // Change 'session_id' to whatever key your backend expects (e.g., 'token', 'reference_id')
+          verifyPayload.session_id = sessionToken; 
+      }
+
+      await customerProfileServices.verifyAndUpdate(verifyPayload);
+      
+      showTemporaryMessage("Phone number verified successfully!");
+      
+      // Delay navigation slightly so user sees the success message
+      setTimeout(() => {
+        router.back();
+      }, 1500);
+    } catch (error: any) {
+      console.error('Verify OTP Error Details:', error.response?.data || error.message);
+      Alert.alert('Verification Failed', error.response?.data?.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -97,18 +182,20 @@ const VerifyNumberPage = () => {
                   onChangeText={setPhoneNumber}
                   keyboardType="phone-pad"
                   autoCorrect={false}
+                  editable={!loading}
                 />
 
                 <TouchableOpacity 
-                  style={styles.primaryBtn}
+                  style={[styles.primaryBtn, loading && styles.disabledBtn]}
                   activeOpacity={0.8}
-                  onPress={() => {
-                    console.log("Phone Number submitted:", phoneNumber);
-                    setSuccessMessage(`OTP sent to ${phoneNumber || 'your number'}`);
-                    setStep('otp');
-                  }}
+                  onPress={handleSendOtp}
+                  disabled={loading}
                 >
-                  <Text style={styles.primaryBtnText}>Continue</Text>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Continue</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             )}
@@ -131,25 +218,31 @@ const VerifyNumberPage = () => {
                         maxLength={1}
                         placeholder="0"
                         placeholderTextColor="#C0C0C0"
+                        editable={!loading}
                         />
                   ))}
                 </View>
 
                 <TouchableOpacity 
-                  style={styles.primaryBtn}
+                  style={[styles.primaryBtn, loading && styles.disabledBtn]}
                   activeOpacity={0.8}
-                  onPress={() => {
-                    const otpCode = otp.join('');
-                    console.log("Verifying OTP:", otpCode);
-                    showTemporaryMessage("Phone number verified successfully!");
-                  }}
+                  onPress={handleVerifyOtp}
+                  disabled={loading}
                 >
-                  <Text style={styles.primaryBtnText}>Verify Number</Text>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Verify Number</Text>
+                  )}
                 </TouchableOpacity>
 
                 <TouchableOpacity 
                     style={styles.resendBtn}
-                    onPress={() => setStep('number')}
+                    onPress={() => {
+                        setStep('number');
+                        setOtp(['', '', '', '', '', '']); // Clear OTP on go back
+                    }}
+                    disabled={loading}
                 >
                     <Text style={styles.resendText}>Change Number</Text>
                 </TouchableOpacity>
@@ -240,6 +333,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  disabledBtn: {
+    opacity: 0.7,
   },
   resendBtn: {
       marginTop: 20,

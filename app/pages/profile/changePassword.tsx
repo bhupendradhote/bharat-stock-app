@@ -15,37 +15,44 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, Stack } from 'expo-router';
 
-// Make sure this path is correct for your project structure
+// Adjust path based on your folder structure
 import customerProfileServices from '@/services/api/methods/profileService'; 
 import OtherPagesInc from '@/components/includes/otherPagesInc';
 
-const VerifyEmailPage = () => {
+const ChangePasswordPage = () => {
   const router = useRouter();
   
-  const [step, setStep] = useState<'email' | 'otp'>('email');
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  // Steps: 'init' (Send OTP) -> 'otp' (Verify OTP) -> 'new_password' (Set Password)
+  const [step, setStep] = useState<'init' | 'otp' | 'new_password'>('init');
   
+  // Form States
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // UI States
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Refs for OTP inputs
   const inputRefs = useRef<Array<TextInput | null>>([]);
 
+  // Handle OTP Input Change
   const handleOtpChange = (text: string, index: number) => {
     const newOtp = [...otp];
     newOtp[index] = text;
     setOtp(newOtp);
 
-    // Auto-advance to next input
     if (text.length === 1 && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
-    // Auto-go back on delete
     if (text.length === 0 && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
+  // Handle Backspace for OTP
   const handleKeyPress = (e: any, index: number) => {
     if (e.nativeEvent.key === 'Backspace' && otp[index] === '' && index > 0) {
       inputRefs.current[index - 1]?.focus();
@@ -61,30 +68,24 @@ const VerifyEmailPage = () => {
 
   // --- API Integrations ---
 
+  // STEP 1: Send OTP
   const handleSendOtp = async () => {
-    if (!email || !email.includes('@')) {
-      Alert.alert('Invalid Input', 'Please enter a valid email address.');
-      return;
-    }
-
     setLoading(true);
     try {
-      // FIXED: Sending 'type' and 'value' as required by Laravel
-      await customerProfileServices.sendUpdateOtp({ 
-        type: 'email', 
-        value: email 
-      });
+      // Backend doesn't require payload since it uses Auth::user()
+      await customerProfileServices.sendPasswordOtp({});
       
-      setSuccessMessage(`OTP sent to ${email}`);
+      setSuccessMessage('OTP sent to your registered mobile number.');
       setStep('otp');
     } catch (error: any) {
-      console.error('Send OTP Error:', error.response?.data || error.message);
+      console.error('Send Password OTP Error:', error.response?.data || error.message);
       Alert.alert('Error', error.response?.data?.message || 'Failed to send OTP. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  // STEP 2: Verify OTP
   const handleVerifyOtp = async () => {
     const otpCode = otp.join('');
     if (otpCode.length < 6) {
@@ -94,22 +95,47 @@ const VerifyEmailPage = () => {
 
     setLoading(true);
     try {
-      // FIXED: Sending 'type', 'value', and 'otp'
-      await customerProfileServices.verifyAndUpdate({ 
-        type: 'email', 
-        value: email, 
-        otp: otpCode 
+      await customerProfileServices.verifyPasswordOtp({ otp: otpCode });
+      
+      setSuccessMessage("OTP verified successfully! Set your new password.");
+      setStep('new_password');
+    } catch (error: any) {
+      console.error('Verify Password OTP Error:', error.response?.data || error.message);
+      Alert.alert('Verification Failed', error.response?.data?.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // STEP 3: Final Password Update
+  const handleUpdatePassword = async () => {
+    if (newPassword.length < 8) {
+      Alert.alert('Weak Password', 'Password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Mismatch', 'Passwords do not match. Please re-type carefully.');
+      return;
+    }
+
+    const otpCode = otp.join('');
+
+    setLoading(true);
+    try {
+      await customerProfileServices.updatePasswordFinal({ 
+        password: newPassword,
+        otp: otpCode // Backend requires OTP again for security verification
       });
       
-      showTemporaryMessage("Email verified successfully!");
+      showTemporaryMessage("Password changed successfully!");
       
-      // Delay navigation slightly so user sees the success message
+      // Delay navigation so user sees the success message
       setTimeout(() => {
         router.back();
       }, 1500);
     } catch (error: any) {
-      console.error('Verify OTP Error:', error.response?.data || error.message);
-      Alert.alert('Verification Failed', error.response?.data?.message || 'Invalid OTP. Please try again.');
+      console.error('Update Password Error:', error.response?.data || error.message);
+      Alert.alert('Update Failed', error.response?.data?.message || 'Failed to update password. Session may have expired.');
     } finally {
       setLoading(false);
     }
@@ -126,7 +152,7 @@ const VerifyEmailPage = () => {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.innerContainer}>
             
-            <Text style={styles.title}>Verify Email</Text>
+            <Text style={styles.title}>Change Password</Text>
 
             {successMessage && (
               <View style={styles.successContainer}>
@@ -135,22 +161,12 @@ const VerifyEmailPage = () => {
               </View>
             )}
 
-            {/* --- STEP 1: EMAIL INPUT --- */}
-            {step === 'email' && (
+            {/* --- STEP 1: INITIATE PASSWORD RESET --- */}
+            {step === 'init' && (
               <View style={styles.formContainer}>
-                <Text style={styles.label}>Enter Email Address</Text>
-                
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter Email Address"
-                  placeholderTextColor="#A0A0A0"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!loading}
-                />
+                <Text style={styles.infoText}>
+                  To change your password securely, we need to verify your identity. Click below to receive an OTP on your registered mobile number.
+                </Text>
 
                 <TouchableOpacity 
                   style={[styles.primaryBtn, loading && styles.disabledBtn]}
@@ -161,13 +177,13 @@ const VerifyEmailPage = () => {
                   {loading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.primaryBtnText}>Continue</Text>
+                    <Text style={styles.primaryBtnText}>Send OTP to Mobile</Text>
                   )}
                 </TouchableOpacity>
               </View>
             )}
 
-            {/* --- STEP 2: OTP INPUT --- */}
+            {/* --- STEP 2: ENTER OTP --- */}
             {step === 'otp' && (
               <View style={styles.formContainer}>
                 <Text style={styles.label}>Enter OTP to Verify</Text>
@@ -199,19 +215,64 @@ const VerifyEmailPage = () => {
                   {loading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.primaryBtnText}>Verify Email</Text>
+                    <Text style={styles.primaryBtnText}>Verify OTP</Text>
                   )}
                 </TouchableOpacity>
 
                 <TouchableOpacity 
                     style={styles.resendBtn}
-                    onPress={() => {
-                        setStep('email');
-                        setOtp(['', '', '', '', '', '']); // Clear OTP on go back
-                    }}
+                    onPress={handleSendOtp}
                     disabled={loading}
                 >
-                    <Text style={styles.resendText}>Change Email</Text>
+                    <Text style={styles.resendText}>Resend OTP</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* --- STEP 3: SET NEW PASSWORD --- */}
+            {step === 'new_password' && (
+              <View style={styles.formContainer}>
+                
+                <Text style={styles.label}>New Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter new password"
+                    placeholderTextColor="#A0A0A0"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry={!showPassword}
+                    editable={!loading}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.label}>Confirm New Password</Text>
+                <View style={styles.passwordInputContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Re-enter new password"
+                    placeholderTextColor="#A0A0A0"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showPassword}
+                    editable={!loading}
+                  />
+                </View>
+
+                <TouchableOpacity 
+                  style={[styles.primaryBtn, loading && styles.disabledBtn, { marginTop: 10 }]}
+                  activeOpacity={0.8}
+                  onPress={handleUpdatePassword}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Update Password</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             )}
@@ -238,38 +299,48 @@ const styles = StyleSheet.create({
   successContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E8F5E9', 
+    backgroundColor: '#E8F5E9',
     padding: 12,
     borderRadius: 8,
     marginBottom: 20,
   },
   successText: {
-    color: '#00A884', 
+    color: '#00A884',
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 8,
   },
   formContainer: {
     flex: 1,
-    marginTop: 80, 
+    marginTop: 40, 
+  },
+  infoText: {
+    fontSize: 15,
+    color: '#4B5563',
+    lineHeight: 22,
+    marginBottom: 30,
   },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#000',
-    marginBottom: 10,
+    color: '#1F2937',
+    marginBottom: 8,
   },
-  input: {
-    width: '100%',
-    height: 52,
+  passwordInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#F5F5F5',
     borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#000',
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    marginBottom: 24,
+    marginBottom: 20,
+    paddingHorizontal: 16,
+    height: 52,
+  },
+  passwordInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#000',
   },
   otpContainer: {
     flexDirection: 'row',
@@ -315,4 +386,4 @@ const styles = StyleSheet.create({
   }
 });
 
-export default VerifyEmailPage;
+export default ChangePasswordPage;

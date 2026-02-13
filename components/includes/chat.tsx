@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 
-// Adjust path as needed based on your folder structure
 import chatServices from '@/services/api/methods/chatServices';
 
 if (
@@ -58,15 +57,11 @@ export default function ChatScreen() {
   
   const flatListRef = useRef<FlatList>(null);
   
-  // FIX: Use 'number' for React Native intervals
   const intervalRef = useRef<number | null>(null);
 
   // --- 1. Lifecycle: Load & Poll ---
   useEffect(() => {
     fetchInitialData();
-
-    // Poll every 3 seconds
-    // We cast the setInterval return to 'unknown' then 'number' to satisfy TS in all envs
     intervalRef.current = setInterval(() => {
       fetchLatestMessagesSilently();
     }, 3000) as unknown as number;
@@ -99,19 +94,15 @@ export default function ChatScreen() {
     try {
       const historyData = await chatServices.getChatHistory();
       
-      // Debug Log: Check your terminal to see if data arrives
-      // console.log("Fetched History Data:", historyData);
 
       if (!Array.isArray(historyData)) {
         console.warn("Expected array for chat history but got:", typeof historyData);
         return;
       }
 
-      // Convert Server Data to UI Data
       const serverMessages = historyData.map(mapToUIMessage);
 
       setMessages((currentMessages) => {
-        // 1. Preserve pending messages
         const pendingMessages = currentMessages.filter((m) => m.isPending);
 
         // 2. Merge Server Messages with Pending Messages
@@ -134,10 +125,8 @@ export default function ChatScreen() {
 
   // --- 3. Mapper Logic ---
   const mapToUIMessage = (item: any): Message => {
-    // Determine Sender based on 'from_role' ('user' or 'admin')
     const isMe = item.from_role === 'user';
 
-    // Safe Date Parsing
     let dateObj = new Date();
     if (item.created_at) {
         const parsed = new Date(item.created_at);
@@ -172,7 +161,6 @@ export default function ChatScreen() {
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
-    // Optimistic Update
     const tempId = 'temp-' + Date.now();
     const now = new Date();
     const optimisticMessage: Message = {
@@ -197,13 +185,11 @@ export default function ChatScreen() {
           prev.map((msg) => (msg.id === tempId ? realMessage : msg))
         );
       } else {
-        // Fallback: just remove pending flag
         setMessages((prev) => 
             prev.map((msg) => (msg.id === tempId ? { ...msg, isPending: false } : msg))
         );
       }
       
-      // Immediate refresh
       fetchLatestMessagesSilently();
 
     } catch (error) {

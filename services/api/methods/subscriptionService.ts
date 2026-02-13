@@ -12,7 +12,7 @@ export interface SubscriptionPlan {
   duration: string;
   description?: string;
   is_active: boolean;
-  durations?: any[]; // For the with('durations.features') relation
+  durations?: any[];
 }
 
 export interface Coupon {
