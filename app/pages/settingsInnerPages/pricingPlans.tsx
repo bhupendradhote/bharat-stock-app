@@ -1,5 +1,5 @@
 // app/PricingPlans.tsx
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,13 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons'; // Assuming you are using Expo
+import { Ionicons } from '@expo/vector-icons';
 import pricingServices from '@/services/api/methods/pricingServices';
 import subscriptionService, { ApplyCouponResponse } from '@/services/api/methods/subscriptionService';
+import customerProfileServices from '@/services/api/methods/profileService'; // Adjust path if needed
 import OtherPagesInc from '@/components/includes/otherPagesInc';
+import AgreementDocumentModal from '@/components/includes/AgreementDocumentModal';
+import AgreementCheckbox from '@/components/includes/AgreementCheckbox';
 
 /* ---------------- Types ---------------- */
 
@@ -46,7 +49,6 @@ interface UIPricingPlan {
   durations: UIPricingDuration[];
 }
 
-// Stores the details of the plan the user clicked on
 interface SelectedPurchaseContext {
   planId: string;
   planName: string;
@@ -119,7 +121,6 @@ const PlanCard = ({
             <View key={`${plan.id}-feat-${idx}`} style={styles.featureRow}>
               <Text style={styles.featureLabel}>{feat.text ?? '—'}</Text>
               <View style={styles.featureValueContainer}>
-                {/* Assuming svg_icon is text/emoji for now, usually needs SvgRenderer */}
                 <Text style={styles.featureValueText}>{feat.svg_icon ?? '✓'}</Text>
               </View>
             </View>
@@ -144,6 +145,7 @@ const PlanCard = ({
 
 export default function PricingPlans() {
   const [plans, setPlans] = useState<UIPricingPlan[]>([]);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -151,7 +153,16 @@ export default function PricingPlans() {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedContext, setSelectedContext] = useState<SelectedPurchaseContext | null>(null);
   
-  // Coupon States (Scoped to Modal)
+  // Payment Method State
+  const [paymentMethod, setPaymentMethod] = useState<'online' | 'manual'>('online');
+  const [isAgreementChecked, setIsAgreementChecked] = useState(false);
+
+  // Agreement Flow State
+  const [isAgreementVisible, setIsAgreementVisible] = useState(false);
+  const [isAgreementSigned, setIsAgreementSigned] = useState(false);
+  const [isSigningAgreement, setIsSigningAgreement] = useState(false);
+
+  // Coupon States
   const [couponInput, setCouponInput] = useState<string>('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [discountDetails, setDiscountDetails] = useState<ApplyCouponResponse | null>(null);
@@ -163,16 +174,25 @@ export default function PricingPlans() {
   const router = useRouter();
 
   useEffect(() => {
-    fetchPlans();
+    fetchInitialData();
   }, []);
 
-  /* --- 1. Fetch Data --- */
-  const fetchPlans = async () => {
+  /* --- 1. Fetch Data (WITH AGGRESSIVE CONSOLE LOGGING) --- */
+  const fetchInitialData = async () => {
     setLoading(true);
     try {
-      const response: any = await pricingServices.getAllPricingPlans();
-      const rawPlans = Array.isArray(response) ? response : response?.data ?? [];
+      console.log("================= STARTING DATA FETCH =================");
+      
+      const [plansResp, profileResp] = await Promise.all([
+        pricingServices.getAllPricingPlans(),
+        customerProfileServices.getProfile().catch((e) => {
+          console.warn("Profile fetch API failed:", e);
+          return null;
+        })
+      ]);
 
+      // Handle Plans
+      const rawPlans = Array.isArray(plansResp) ? plansResp : (plansResp as any)?.data ?? [];
       const uiPlans: UIPricingPlan[] = rawPlans.map((p: any) => ({
         id: String(p.id),
         title: p.name ?? 'Untitled Plan',
@@ -187,26 +207,60 @@ export default function PricingPlans() {
           features: d.features ?? [],
         })),
       }));
-
       setPlans(uiPlans);
+
+      // ==========================================
+      // DEBUGGING: TRACING THE JSON PATH
+      // ==========================================
+      console.log("STEP 1: RAW PROFILE RESPONSE:", profileResp ? "Received" : "NULL");
+      
+      if (profileResp) {
+        // Because your service does: `return response.data?.data ?? response.data;`
+        // profileResp should already be `{ user: { ... } }`
+        
+        const userObj = profileResp.user || profileResp.data?.user || profileResp;
+        console.log("STEP 2: EXTRACTED USER OBJ:", userObj ? "Found User Object" : "User Object Missing");
+
+        if (userObj) {
+          setUserProfile(userObj); // Save to state
+          
+          console.log("STEP 3: KYC OBJECT:", userObj.kyc ? "Found KYC" : "KYC Missing");
+          
+          if (userObj.kyc && userObj.kyc.media) {
+            console.log("STEP 4: MEDIA ARRAY:", "Is Array?", Array.isArray(userObj.kyc.media), "| Length:", userObj.kyc.media.length);
+            
+            const signatureItem = userObj.kyc.media.find((m: any) => m.collection_name === 'kyc_signature');
+            console.log("STEP 5: SIGNATURE ITEM FOUND?", signatureItem ? "YES" : "NO");
+            
+            if (signatureItem) {
+              console.log("STEP 6: FINAL EXTRACTED URL --->", signatureItem.original_url);
+            }
+          }
+        }
+      }
+      console.log("================= END DATA FETCH =================");
+
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to load plans');
+      console.error("Fetch Error:", err);
+      setError(err?.message ?? 'Failed to load data');
     } finally {
       setLoading(false);
     }
   };
 
   /* --- 2. Modal Logic --- */
-
   const openCheckoutModal = (plan: UIPricingPlan, durationIndex: number) => {
     const duration = plan.durations[durationIndex];
     if (!duration) return;
 
-    // Reset coupon state when opening modal
     setCouponInput('');
     setAppliedCoupon(null);
     setDiscountDetails(null);
     setValidatingCoupon(false);
+    setPaymentMethod('online');
+    setIsAgreementChecked(false);
+    setIsAgreementSigned(false);
+    setIsAgreementVisible(false);
 
     setSelectedContext({
       planId: plan.id,
@@ -225,7 +279,6 @@ export default function PricingPlans() {
   };
 
   /* --- 3. Coupon Logic --- */
-
   const handleApplyCoupon = async () => {
     if (!selectedContext) return;
     
@@ -237,7 +290,6 @@ export default function PricingPlans() {
 
     setValidatingCoupon(true);
     try {
-      // API call requires code and duration ID
       const resp = await subscriptionService.applyCoupon(code, selectedContext.durationId);
       
       if (resp.success) {
@@ -262,56 +314,132 @@ export default function PricingPlans() {
     setCouponInput('');
   };
 
-  /* --- 4. Payment Logic --- */
+  /* --- 4. Calculation Helper --- */
+  const getFinalPrice = (): number => {
+    if (discountDetails?.final_price) return Number(discountDetails.final_price);
+    return Number(selectedContext?.originalPrice ?? 0);
+  };
+  
+  const getDiscountAmount = (): number => {
+     if (discountDetails?.discount) return Number(discountDetails.discount);
+     return 0;
+  };
 
-  const handlePayNow = async () => {
+  /* --- 5. Flow Navigation Logic --- */
+  const handleProceedClick = () => {
+    if (!isAgreementChecked) {
+      Alert.alert('Agreement Required', 'Please accept the Terms & Conditions to proceed.');
+      return;
+    }
+
     if (!selectedContext) return;
-    setProcessingPayment(true);
+    
+    setModalVisible(false);
 
-    try {
-      // 1. Initiate Razorpay Order
-      const initResp: any = await subscriptionService.initiateRazorpay(
-        Number(selectedContext.planId),
-        Number(selectedContext.durationId),
-        appliedCoupon
-      );
-
-      const { order_id, key, amount } = initResp || {};
-
-      if (order_id && key) {
-        // 2. Prepare params for WebView or SDK
-        const params = new URLSearchParams({
-          order_id: String(order_id),
-          key: String(key),
-          amount: String(amount),
-          plan_id: String(selectedContext.planId),
-          duration_id: String(selectedContext.durationId),
-          coupon_code: appliedCoupon || '',
-        }).toString();
-
-        // Close modal before navigating
-        setModalVisible(false); 
-        router.push(`/pages/subscription/RazorpayWebView?${params}`);
-      } else {
-        Alert.alert('Error', 'Could not initialize payment gateway.');
-      }
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Failed to initiate purchase';
-      Alert.alert('Payment Error', msg);
-    } finally {
-      setProcessingPayment(false);
+    if (!isAgreementSigned) {
+      setTimeout(() => {
+        setIsAgreementVisible(true);
+      }, 300);
+    } else {
+      executePaymentRouting();
     }
   };
 
-  /* --- 5. Calculation Helper --- */
-  const getFinalPrice = () => {
-    if (discountDetails?.final_price) return discountDetails.final_price;
-    return selectedContext?.originalPrice ?? 0;
+  const handleSignAgreement = async () => {
+    setIsSigningAgreement(true);
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      setIsAgreementSigned(true);
+      setIsAgreementVisible(false);
+      
+      setTimeout(() => {
+        executePaymentRouting();
+      }, 500);
+
+    } catch (err: any) {
+      Alert.alert('Error', 'Failed to sign agreement. Please try again.');
+    } finally {
+      setIsSigningAgreement(false);
+    }
   };
+
+  const executePaymentRouting = async () => {
+    if (!selectedContext) return;
+
+    if (paymentMethod === 'online') {
+      setProcessingPayment(true);
+      try {
+        const initResp: any = await subscriptionService.initiateRazorpay(
+          Number(selectedContext.planId),
+          Number(selectedContext.durationId),
+          appliedCoupon
+        );
+
+        const { order_id, key, amount } = initResp || {};
+
+        if (order_id && key) {
+          const params = new URLSearchParams({
+            order_id: String(order_id),
+            key: String(key),
+            amount: String(amount),
+            plan_id: String(selectedContext.planId),
+            duration_id: String(selectedContext.durationId),
+            coupon_code: appliedCoupon || '',
+            plan_name: String(selectedContext.planName),          
+            duration_label: String(selectedContext.durationLabel)
+          }).toString();
+
+          router.push(`/pages/subscription/RazorpayWebView?${params}` as any);
+        } else {
+          Alert.alert('Error', 'Could not initialize payment gateway.');
+        }
+      } catch (err: any) {
+        const msg = err?.response?.data?.message || 'Failed to initiate purchase';
+        Alert.alert('Payment Error', msg);
+      } finally {
+        setProcessingPayment(false);
+      }
+    } else {
+      const params = new URLSearchParams({
+        plan_id: String(selectedContext.planId),
+        duration_id: String(selectedContext.durationId),
+        amount: String(getFinalPrice()),
+        coupon_code: appliedCoupon || '',
+        plan_name: String(selectedContext.planName),
+        duration_label: String(selectedContext.durationLabel)
+      }).toString();
+
+      router.push(`/pages/subscription/ManualQRUpload?${params}` as any);
+    }
+  };
+
+  /* ============================================================== */
+  /* --- STATE DATA EXTRACTION TO PASS TO MODAL ---                 */
+  /* ============================================================== */
   
-  const getDiscountAmount = () => {
-     if(discountDetails?.discount) return discountDetails.discount;
-     return 0;
+  let extractedSignatureUrl: string | null = null;
+  let extractedAadhaar = 'Verified';
+  let extractedName = 'Guest';
+  let extractedEmail = 'N/A';
+  let extractedPhone = 'N/A';
+
+  if (userProfile) {
+    extractedName = userProfile.name || 'Guest';
+    extractedEmail = userProfile.email || 'N/A';
+    extractedPhone = userProfile.phone || userProfile.mobile || 'N/A';
+    
+    if (userProfile.kyc) {
+      extractedAadhaar = userProfile.kyc.kyc_details?.aadhaar?.id_number || 'Verified';
+      
+      if (Array.isArray(userProfile.kyc.media)) {
+        const signatureObj = userProfile.kyc.media.find((m: any) => m.collection_name === 'kyc_signature');
+        if (signatureObj && signatureObj.original_url) {
+          extractedSignatureUrl = signatureObj.original_url;
+        }
+      }
+    }
   }
 
   /* --- Render --- */
@@ -321,8 +449,6 @@ export default function PricingPlans() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Removed the top coupon box - logic is now inside the modal */}
-
         {loading ? (
           <ActivityIndicator style={{ marginTop: 50 }} color="#005BC1" />
         ) : error ? (
@@ -352,7 +478,6 @@ export default function PricingPlans() {
             style={styles.modalOverlay}
           >
             <View style={styles.modalContent}>
-              {/* Header */}
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Order Summary</Text>
                 <TouchableOpacity onPress={closeCheckoutModal}>
@@ -360,102 +485,164 @@ export default function PricingPlans() {
                 </TouchableOpacity>
               </View>
 
-              {selectedContext && (
-                <>
-                  {/* Plan Details */}
-                  <View style={styles.summaryBox}>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Plan Name</Text>
-                      <Text style={styles.summaryValue}>{selectedContext.planName}</Text>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                {selectedContext && (
+                  <>
+                    <View style={styles.summaryBox}>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Plan Name</Text>
+                        <Text style={styles.summaryValue}>{selectedContext.planName}</Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Duration</Text>
+                        <Text style={styles.summaryValue}>{selectedContext.durationLabel}</Text>
+                      </View>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Price</Text>
+                        <Text style={styles.summaryValue}>₹{selectedContext.originalPrice}</Text>
+                      </View>
                     </View>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Duration</Text>
-                      <Text style={styles.summaryValue}>{selectedContext.durationLabel}</Text>
-                    </View>
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Price</Text>
-                      <Text style={styles.summaryValue}>₹{selectedContext.originalPrice}</Text>
-                    </View>
-                  </View>
 
-                  {/* Coupon Section */}
-                  <View style={styles.modalCouponContainer}>
-                    <Text style={styles.modalSectionTitle}>Have a Coupon?</Text>
-                    <View style={styles.couponRow}>
-                      <TextInput
-                        placeholder="Enter Code"
-                        value={couponInput}
-                        onChangeText={setCouponInput}
-                        autoCapitalize="characters"
-                        style={[styles.couponInput, appliedCoupon && { backgroundColor: '#ECFDF5', borderColor: '#059669' }]}
-                        editable={!appliedCoupon && !validatingCoupon}
-                      />
-                      <TouchableOpacity
-                        style={[
-                            styles.applyBtn, 
-                            appliedCoupon ? { backgroundColor: '#DC2626' } : {},
-                            (!couponInput && !appliedCoupon) ? { backgroundColor: '#9CA3AF' } : {}
-                        ]}
-                        onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
-                        disabled={validatingCoupon || (!couponInput && !appliedCoupon)}
+                    <View style={styles.modalCouponContainer}>
+                      <Text style={styles.modalSectionTitle}>Have a Coupon?</Text>
+                      <View style={styles.couponRow}>
+                        <TextInput
+                          placeholder="Enter Code"
+                          value={couponInput}
+                          onChangeText={setCouponInput}
+                          autoCapitalize="characters"
+                          style={[styles.couponInput, appliedCoupon && { backgroundColor: '#ECFDF5', borderColor: '#059669' }]}
+                          editable={!appliedCoupon && !validatingCoupon}
+                        />
+                        <TouchableOpacity
+                          style={[
+                              styles.applyBtn, 
+                              appliedCoupon ? { backgroundColor: '#DC2626' } : {},
+                              (!couponInput && !appliedCoupon) ? { backgroundColor: '#9CA3AF' } : {}
+                          ]}
+                          onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
+                          disabled={validatingCoupon || (!couponInput && !appliedCoupon)}
+                        >
+                          {validatingCoupon ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                          ) : (
+                            <Text style={styles.applyBtnText}>{appliedCoupon ? 'Remove' : 'Apply'}</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                      {appliedCoupon && (
+                        <Text style={styles.couponSuccessMsg}>
+                           Coupon applied! You saved ₹{getDiscountAmount()}
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={styles.divider} />
+
+                    <View style={styles.paymentMethodSection}>
+                      <Text style={styles.modalSectionTitle}>Payment Method</Text>
+                      
+                      <TouchableOpacity 
+                        style={[styles.paymentMethodCard, paymentMethod === 'online' && styles.paymentMethodCardActive]}
+                        onPress={() => setPaymentMethod('online')}
+                        activeOpacity={0.7}
                       >
-                        {validatingCoupon ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <Text style={styles.applyBtnText}>{appliedCoupon ? 'Remove' : 'Apply'}</Text>
-                        )}
+                        <View style={styles.paymentMethodIconWrapper}>
+                          <Ionicons name="card-outline" size={24} color={paymentMethod === 'online' ? '#005BC1' : '#6B7280'} />
+                        </View>
+                        <View style={styles.paymentMethodTextWrapper}>
+                          <Text style={[styles.paymentMethodTitle, paymentMethod === 'online' && styles.paymentMethodTitleActive]}>Online Payment</Text>
+                          <Text style={styles.paymentMethodSub}>Razorpay Gateway (UPI, Card)</Text>
+                        </View>
+                        <View style={styles.radioCircle}>
+                          {paymentMethod === 'online' && <View style={styles.radioInnerCircle} />}
+                        </View>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity 
+                        style={[styles.paymentMethodCard, paymentMethod === 'manual' && styles.paymentMethodCardActive]}
+                        onPress={() => setPaymentMethod('manual')}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.paymentMethodIconWrapper}>
+                          <Ionicons name="qr-code-outline" size={24} color={paymentMethod === 'manual' ? '#005BC1' : '#6B7280'} />
+                        </View>
+                        <View style={styles.paymentMethodTextWrapper}>
+                          <Text style={[styles.paymentMethodTitle, paymentMethod === 'manual' && styles.paymentMethodTitleActive]}>Manual QR Scan</Text>
+                          <Text style={styles.paymentMethodSub}>Pay via QR & Upload Proof</Text>
+                        </View>
+                        <View style={styles.radioCircle}>
+                          {paymentMethod === 'manual' && <View style={styles.radioInnerCircle} />}
+                        </View>
                       </TouchableOpacity>
                     </View>
-                    {appliedCoupon && (
-                      <Text style={styles.couponSuccessMsg}>
-                         Coupon applied! You saved ₹{getDiscountAmount()}
-                      </Text>
+
+                    <View style={styles.divider} />
+
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Total Payable</Text>
+                      <Text style={styles.totalAmount}>₹{getFinalPrice()}</Text>
+                    </View>
+
+                    <AgreementCheckbox 
+                      isChecked={isAgreementChecked} 
+                      onToggle={setIsAgreementChecked} 
+                    />
+
+                    <TouchableOpacity
+                      style={[styles.payNowBtn, !isAgreementChecked && { backgroundColor: '#9CA3AF', shadowOpacity: 0 }]}
+                      onPress={handleProceedClick}
+                      disabled={processingPayment || !isAgreementChecked}
+                      activeOpacity={0.8}
+                    >
+                      {processingPayment ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.payNowBtnText}>
+                          {isAgreementSigned ? (paymentMethod === 'online' ? 'Proceed to Pay' : 'Scan to Pay') : 'Proceed to Agreement'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+
+                    {paymentMethod === 'online' && (
+                      <View style={styles.secureBadge}>
+                        <Ionicons name="lock-closed-outline" size={12} color="#6B7280" />
+                        <Text style={styles.secureText}> Secured by Razorpay</Text>
+                      </View>
                     )}
-                  </View>
-
-                  <View style={styles.divider} />
-
-                  {/* Final Total */}
-                  <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>Total Payable</Text>
-                    <Text style={styles.totalAmount}>₹{getFinalPrice()}</Text>
-                  </View>
-
-                  {/* Pay Button */}
-                  <TouchableOpacity
-                    style={styles.payNowBtn}
-                    onPress={handlePayNow}
-                    disabled={processingPayment}
-                  >
-                    {processingPayment ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.payNowBtnText}>Pay Now</Text>
-                    )}
-                  </TouchableOpacity>
-
-                  <View style={styles.secureBadge}>
-                    <Ionicons name="lock-closed-outline" size={12} color="#6B7280" />
-                    <Text style={styles.secureText}> Secured by Razorpay</Text>
-                  </View>
-                </>
-              )}
+                  </>
+                )}
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* ---------------- LEGAL AGREEMENT MODAL ---------------- */}
+      <AgreementDocumentModal 
+        visible={isAgreementVisible}
+        onClose={() => setIsAgreementVisible(false)}
+        onSignAndProceed={handleSignAgreement}
+        isSigning={isSigningAgreement}
+        
+        planName={selectedContext?.planName || ''}
+        durationName={selectedContext?.durationLabel || ''}
+        amount={getFinalPrice()}
+        
+        userName={extractedName} 
+        userEmail={extractedEmail}
+        userPhone={extractedPhone}
+        aadhaarNumber={extractedAadhaar}
+        signatureUrl={extractedSignatureUrl}
+      />
+
     </OtherPagesInc>
   );
 }
 
-/* ---------------- Styles ---------------- */
-
 const styles = StyleSheet.create({
   scrollContent: { padding: 16 },
   errorText: { color: '#DC2626', textAlign: 'center', marginTop: 20 },
-  
-  // Card Styles
   cardContainer: { marginBottom: 24 },
   recommendedBanner: { backgroundColor: '#005BC1', paddingVertical: 6, borderTopLeftRadius: 16, borderTopRightRadius: 16, alignItems: 'center' },
   recommendedText: { color: '#fff', fontWeight: '700', fontSize: 12, textTransform: 'uppercase' },
@@ -465,7 +652,6 @@ const styles = StyleSheet.create({
   priceContainer: { marginBottom: 4 },
   priceText: { fontSize: 28, fontWeight: '800', color: '#005BC1' },
   priceSubText: { fontSize: 14, color: '#6B7280' },
-  
   durationContainer: { flexDirection: 'row', marginVertical: 16, flexWrap: 'wrap', gap: 8 },
   durationBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1 },
   durationBtnActive: { backgroundColor: '#005BC1', borderColor: '#005BC1' },
@@ -473,88 +659,45 @@ const styles = StyleSheet.create({
   durationText: { fontSize: 12, fontWeight: '600' },
   durationTextActive: { color: '#fff' },
   durationTextInactive: { color: '#374151' },
-  
   featuresHeader: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 10 },
   featuresList: { marginBottom: 20 },
   featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   featureLabel: { fontSize: 14, color: '#4B5563' },
   featureValueContainer: { alignItems: 'flex-end' },
   featureValueText: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  
   purchaseBtn: { backgroundColor: '#005BC1', paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
   purchaseBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    minHeight: '45%',
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 24, maxHeight: '90%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  
-  summaryBox: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
+  summaryBox: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 16, marginBottom: 20 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   summaryLabel: { fontSize: 14, color: '#6B7280' },
   summaryValue: { fontSize: 14, fontWeight: '600', color: '#111827' },
-
   modalCouponContainer: { marginBottom: 20 },
-  modalSectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#374151' },
+  modalSectionTitle: { fontSize: 14, fontWeight: '700', marginBottom: 10, color: '#374151' },
   couponRow: { flexDirection: 'row' },
-  couponInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 44,
-    marginRight: 10,
-    backgroundColor: '#fff',
-  },
+  couponInput: { flex: 1, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, paddingHorizontal: 12, height: 44, marginRight: 10, backgroundColor: '#fff' },
   applyBtn: { backgroundColor: '#005BC1', paddingHorizontal: 20, borderRadius: 8, justifyContent: 'center' },
   applyBtnText: { color: '#fff', fontWeight: '700' },
   couponSuccessMsg: { color: '#059669', fontSize: 12, marginTop: 4, fontWeight: '600' },
-
+  paymentMethodSection: { marginBottom: 10 },
+  paymentMethodCard: { flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, marginBottom: 10, backgroundColor: '#fff' },
+  paymentMethodCardActive: { borderColor: '#005BC1', backgroundColor: '#F0F5FA' },
+  paymentMethodIconWrapper: { marginRight: 12 },
+  paymentMethodTextWrapper: { flex: 1 },
+  paymentMethodTitle: { fontSize: 15, fontWeight: '600', color: '#374151' },
+  paymentMethodTitleActive: { color: '#005BC1' },
+  paymentMethodSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  radioCircle: { height: 20, width: 20, borderRadius: 10, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
+  radioInnerCircle: { height: 10, width: 10, borderRadius: 5, backgroundColor: '#005BC1' },
   divider: { height: 1, backgroundColor: '#E5E7EB', marginBottom: 16 },
-  
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   totalLabel: { fontSize: 18, fontWeight: '700', color: '#111827' },
   totalAmount: { fontSize: 24, fontWeight: '800', color: '#005BC1' },
-
-  payNowBtn: {
-    backgroundColor: '#059669',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: "#059669",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 4
-  },
-  payNowBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-
+  payNowBtn: { backgroundColor: '#059669', paddingVertical: 16, borderRadius: 12, alignItems: 'center', shadowColor: "#059669", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 4 },
+  payNowBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   secureBadge: { flexDirection: 'row', justifyContent: 'center', marginTop: 16, alignItems: 'center' },
   secureText: { fontSize: 11, color: '#6B7280' },
 });

@@ -1,36 +1,33 @@
 {
   "expo": {
     "name": "Bharat Stock",
-    "slug": "bharatStock",
-    "version": "1.0.0",
+    "slug": "bharatstockapp",
+    "version": "2.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.svg",
+    "icon": "./assets/images/icon.png",
     "scheme": "bharatstock",
     "userInterfaceStyle": "automatic",
-
     "ios": {
       "supportsTablet": true
     },
-
     "android": {
       "package": "com.bharatstock.app",
+      "versionCode": 2,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.svg",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#E6F4FE"
       }
     },
-
     "web": {
       "output": "static",
-      "favicon": "./assets/images/icon.svg"
+      "favicon": "./assets/images/icon.png"
     },
-
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/icon.svg",
+          "image": "./assets/images/icon.png",
           "resizeMode": "cover",
           "backgroundColor": "#FFFFFF"
         }
@@ -44,17 +41,15 @@
         }
       ]
     ],
-
     "experiments": {
       "typedRoutes": true
     },
-
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "2a1ef606-e726-4c50-9d00-7bebab722e89"
+        "projectId": "442316c2-aae1-41ea-862f-1eb1b008d1d5"
       }
     },
-
-    "owner": "bhupendra_dhote"
+    "owner": "bsmr"
   }
 }

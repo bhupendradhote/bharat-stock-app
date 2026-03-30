@@ -14,7 +14,7 @@ import { useRouter, Stack } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
 
-const welcomeImageSource = require('../../../assets/images/welcome.png');
+const welcomeImageSource = require('../../../assets/images/icon.png');
 
 const WelcomePage = () => {
   const router = useRouter();
