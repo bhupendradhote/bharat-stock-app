@@ -14,15 +14,17 @@ import {
   TouchableWithoutFeedback,
   Platform,
   KeyboardAvoidingView,
+  SafeAreaView,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 import pricingServices from '@/services/api/methods/pricingServices';
 import subscriptionService, { ApplyCouponResponse } from '@/services/api/methods/subscriptionService';
-import customerProfileServices from '@/services/api/methods/profileService'; // Adjust path if needed
+import customerProfileServices from '@/services/api/methods/profileService'; 
+import AgreementService from '@/services/api/methods/agreementService';
 import OtherPagesInc from '@/components/includes/otherPagesInc';
 import AgreementDocumentModal from '@/components/includes/AgreementDocumentModal';
-import AgreementCheckbox from '@/components/includes/AgreementCheckbox';
 
 /* ---------------- Types ---------------- */
 
@@ -56,6 +58,7 @@ interface SelectedPurchaseContext {
   durationId: number;
   durationLabel: string;
   originalPrice: number;
+  features: string[];
 }
 
 /* ---------------- PlanCard Component ---------------- */
@@ -155,12 +158,17 @@ export default function PricingPlans() {
   
   // Payment Method State
   const [paymentMethod, setPaymentMethod] = useState<'online' | 'manual'>('online');
-  const [isAgreementChecked, setIsAgreementChecked] = useState(false);
 
   // Agreement Flow State
+  const [checkingExisting, setCheckingExisting] = useState(false);
   const [isAgreementVisible, setIsAgreementVisible] = useState(false);
   const [isAgreementSigned, setIsAgreementSigned] = useState(false);
   const [isSigningAgreement, setIsSigningAgreement] = useState(false);
+  
+  // Digio WebView States
+  const [esignWebViewVisible, setEsignWebViewVisible] = useState(false);
+  const [activeEsignUrl, setActiveEsignUrl] = useState<string | null>(null);
+  const [draftAgreementId, setDraftAgreementId] = useState<number | null>(null);
 
   // Coupon States
   const [couponInput, setCouponInput] = useState<string>('');
@@ -177,12 +185,10 @@ export default function PricingPlans() {
     fetchInitialData();
   }, []);
 
-  /* --- 1. Fetch Data (WITH AGGRESSIVE CONSOLE LOGGING) --- */
+  /* --- 1. Fetch Data --- */
   const fetchInitialData = async () => {
     setLoading(true);
     try {
-      console.log("================= STARTING DATA FETCH =================");
-      
       const [plansResp, profileResp] = await Promise.all([
         pricingServices.getAllPricingPlans(),
         customerProfileServices.getProfile().catch((e) => {
@@ -191,7 +197,6 @@ export default function PricingPlans() {
         })
       ]);
 
-      // Handle Plans
       const rawPlans = Array.isArray(plansResp) ? plansResp : (plansResp as any)?.data ?? [];
       const uiPlans: UIPricingPlan[] = rawPlans.map((p: any) => ({
         id: String(p.id),
@@ -208,38 +213,13 @@ export default function PricingPlans() {
         })),
       }));
       setPlans(uiPlans);
-
-      // ==========================================
-      // DEBUGGING: TRACING THE JSON PATH
-      // ==========================================
-      console.log("STEP 1: RAW PROFILE RESPONSE:", profileResp ? "Received" : "NULL");
       
       if (profileResp) {
-        // Because your service does: `return response.data?.data ?? response.data;`
-        // profileResp should already be `{ user: { ... } }`
-        
         const userObj = profileResp.user || profileResp.data?.user || profileResp;
-        console.log("STEP 2: EXTRACTED USER OBJ:", userObj ? "Found User Object" : "User Object Missing");
-
         if (userObj) {
-          setUserProfile(userObj); // Save to state
-          
-          console.log("STEP 3: KYC OBJECT:", userObj.kyc ? "Found KYC" : "KYC Missing");
-          
-          if (userObj.kyc && userObj.kyc.media) {
-            console.log("STEP 4: MEDIA ARRAY:", "Is Array?", Array.isArray(userObj.kyc.media), "| Length:", userObj.kyc.media.length);
-            
-            const signatureItem = userObj.kyc.media.find((m: any) => m.collection_name === 'kyc_signature');
-            console.log("STEP 5: SIGNATURE ITEM FOUND?", signatureItem ? "YES" : "NO");
-            
-            if (signatureItem) {
-              console.log("STEP 6: FINAL EXTRACTED URL --->", signatureItem.original_url);
-            }
-          }
+          setUserProfile(userObj); 
         }
       }
-      console.log("================= END DATA FETCH =================");
-
     } catch (err: any) {
       console.error("Fetch Error:", err);
       setError(err?.message ?? 'Failed to load data');
@@ -248,19 +228,23 @@ export default function PricingPlans() {
     }
   };
 
-  /* --- 2. Modal Logic --- */
+  /* --- 2. Modal Setup (Instant Open) --- */
   const openCheckoutModal = (plan: UIPricingPlan, durationIndex: number) => {
     const duration = plan.durations[durationIndex];
     if (!duration) return;
 
+    // Reset States
     setCouponInput('');
     setAppliedCoupon(null);
     setDiscountDetails(null);
     setValidatingCoupon(false);
     setPaymentMethod('online');
-    setIsAgreementChecked(false);
     setIsAgreementSigned(false);
     setIsAgreementVisible(false);
+    setDraftAgreementId(null);
+    setActiveEsignUrl(null);
+
+    const featureList = duration.features.map(f => f.text).filter(Boolean) as string[];
 
     setSelectedContext({
       planId: plan.id,
@@ -269,7 +253,9 @@ export default function PricingPlans() {
       durationId: duration.id,
       durationLabel: duration.label,
       originalPrice: duration.price,
+      features: featureList,
     });
+    
     setModalVisible(true);
   };
 
@@ -325,48 +311,201 @@ export default function PricingPlans() {
      return 0;
   };
 
-  /* --- 5. Flow Navigation Logic --- */
-  const handleProceedClick = () => {
-    if (!isAgreementChecked) {
-      Alert.alert('Agreement Required', 'Please accept the Terms & Conditions to proceed.');
-      return;
-    }
-
+  /* --- 5. Flow Navigation Logic (ON CLICK) --- */
+  const handleProceedClick = async () => {
     if (!selectedContext) return;
-    
-    setModalVisible(false);
 
-    if (!isAgreementSigned) {
-      setTimeout(() => {
-        setIsAgreementVisible(true);
-      }, 300);
-    } else {
-      executePaymentRouting();
+    setCheckingExisting(true);
+    
+    try {
+      // 1. Fetch Drafts to check existing agreement
+      const draftsResp = await AgreementService.getDrafts();
+      let validDraft = null;
+      
+      if (draftsResp.success && draftsResp.data) {
+        validDraft = draftsResp.data.find((d: any) => 
+          d.plan.id === Number(selectedContext.planId) && 
+          d.duration.id === selectedContext.durationId
+        );
+      }
+
+      if (validDraft) {
+        setDraftAgreementId(validDraft.id);
+        try {
+          // 2. Verify exact status
+          const statusResp = await AgreementService.checkStatus(validDraft.id);
+          const status = statusResp.status;
+
+          if (status === 'signed') {
+            // ALREADY SIGNED -> Go straight to Payment
+            setIsAgreementSigned(true);
+            setModalVisible(false);
+            setTimeout(() => executePaymentRouting(), 300);
+          } else if (['pending', 'created', 'esign_pending'].includes(status)) {
+            // PENDING SIGNATURE -> Open WebView immediately
+            setIsAgreementSigned(false);
+            setActiveEsignUrl((statusResp.data as any)?.esign_url || validDraft.esign?.esign_url);
+            setModalVisible(false);
+            setTimeout(() => setEsignWebViewVisible(true), 300);
+          } else {
+            // EXPIRED / ANY OTHER STATUS -> Create new
+            setModalVisible(false);
+            setTimeout(() => setIsAgreementVisible(true), 300);
+          }
+        } catch (statusErr: any) {
+          // Backend controller throws 410, 422, or 404 for expired/missing drafts
+          const errCode = statusErr?.response?.status;
+          if (errCode === 410 || errCode === 404 || errCode === 422) {
+             setModalVisible(false);
+             setTimeout(() => setIsAgreementVisible(true), 300);
+          } else {
+             Alert.alert('Error', 'Failed to verify existing agreement status. Please try again.');
+          }
+        }
+      } else {
+        // NO DRAFT EXISTS -> Create new
+        setModalVisible(false);
+        setTimeout(() => setIsAgreementVisible(true), 300);
+      }
+    } catch (err: any) {
+      console.log("Check existing draft failed:", err);
+      // Let the creation API handle the KYC fallback if getDrafts fails
+      Alert.alert('Notice', 'Proceeding to create a new agreement.');
+      setModalVisible(false);
+      setTimeout(() => setIsAgreementVisible(true), 300);
+    } finally {
+      setCheckingExisting(false);
     }
   };
 
+  /* --- Create Draft & Open WebView --- */
   const handleSignAgreement = async () => {
+    if (!selectedContext) return;
     setIsSigningAgreement(true);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const payload: Record<string, any> = {
+        plan_id: Number(selectedContext.planId),
+        duration_id: Number(selectedContext.durationId),
+        plan_name: selectedContext.planName,
+        duration: selectedContext.durationLabel,
+        features: selectedContext.features,
+        current_url: 'https://bharatstockmarketresearch.com/subscribe/confirm',
+      };
+
+      if (appliedCoupon && appliedCoupon.trim() !== '') {
+        payload.coupon_code = appliedCoupon.trim();
+      }
       
-      setIsAgreementSigned(true);
+      const resp: any = await AgreementService.createDraft(payload as any);
+      
+      if (resp && resp.success === false) {
+        throw new Error(resp.message || 'Server rejected the agreement draft.');
+      }
+
       setIsAgreementVisible(false);
-      
-      setTimeout(() => {
-        executePaymentRouting();
-      }, 500);
+
+      if (resp?.esign_url) {
+        setActiveEsignUrl(resp.esign_url);
+        // Save the newly created draft ID so verifyWebViewStatus works
+        const newDraftData = resp?.data || resp;
+        if (newDraftData?.id) {
+            setDraftAgreementId(newDraftData.id);
+        }
+        setTimeout(() => setEsignWebViewVisible(true), 500);
+      } else {
+        setIsAgreementSigned(true);
+        setTimeout(() => executePaymentRouting(), 500);
+      }
 
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to sign agreement. Please try again.');
+      let errorMessage = 'Failed to sign agreement. Please try again.';
+      
+      // Handle the strict KYC 403 error from Laravel
+      if (err?.response?.status === 403 || err?.response?.data?.message?.toLowerCase().includes('kyc')) {
+        errorMessage = 'Your KYC must be approved before you can subscribe to a plan. Please complete your KYC verification.';
+        setIsAgreementVisible(false); // Close modal if KYC is missing
+      } else if (err?.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err?.message) {
+        errorMessage = err.message;
+      }
+      
+      Alert.alert('Agreement Error', errorMessage);
     } finally {
       setIsSigningAgreement(false);
     }
   };
 
-  const executePaymentRouting = async () => {
+  /* --- Verifies the status when returning from the WebView --- */
+  const verifyWebViewStatus = async () => {
+    setEsignWebViewVisible(false);
+    
+    if (draftAgreementId) {
+      try {
+        setProcessingPayment(true);
+        const statusResp = await AgreementService.checkStatus(draftAgreementId);
+        
+        if (statusResp.status === 'signed') { 
+          setIsAgreementSigned(true);
+          // Show Success Message before proceeding
+          Alert.alert('Success', 'Agreement signed successfully!', [
+            { text: 'Proceed to Payment', onPress: () => executePaymentRouting() }
+          ]);
+        } else {
+          // Alert.alert('Notice', 'Agreement signing was not completed.');
+          // setModalVisible(true);
+        }
+      } catch (err: any) {
+        const errCode = err?.response?.status;
+        if (errCode === 410) {
+          Alert.alert('Notice', 'The signing link expired. Please generate a new agreement.');
+        } else {
+          Alert.alert('Error', 'Could not verify agreement status from Digio.');
+        }
+        setModalVisible(true);
+      } finally {
+        setProcessingPayment(false);
+      }
+    } else {
+      // Fallback fetch if ID went missing
+      try {
+        setProcessingPayment(true);
+        const draftsResp = await AgreementService.getDrafts();
+        const validDraft = draftsResp?.data?.find((d: any) => 
+          d.plan.id === Number(selectedContext?.planId) && 
+          d.duration.id === selectedContext?.durationId
+        );
+        
+        if (validDraft) {
+          setDraftAgreementId(validDraft.id);
+          const statusResp = await AgreementService.checkStatus(validDraft.id);
+          if (statusResp.status === 'signed') {
+            setIsAgreementSigned(true);
+            // Show Success Message before proceeding
+            Alert.alert('Success', 'Agreement signed successfully!', [
+              { text: 'Proceed to Payment', onPress: () => executePaymentRouting() }
+            ]);
+          } else {
+            Alert.alert('Notice', 'Agreement signing was not completed.');
+            setModalVisible(true);
+          }
+        } else {
+          setModalVisible(true);
+        }
+      } catch (e) {
+        setModalVisible(true);
+      } finally {
+        setProcessingPayment(false);
+      }
+    }
+  };
+
+  /* --- Payment Routing --- */
+  const executePaymentRouting = async (freshEsignUrl?: string) => {
     if (!selectedContext) return;
+
+    const urlToUse = freshEsignUrl || activeEsignUrl;
 
     if (paymentMethod === 'online') {
       setProcessingPayment(true);
@@ -388,7 +527,8 @@ export default function PricingPlans() {
             duration_id: String(selectedContext.durationId),
             coupon_code: appliedCoupon || '',
             plan_name: String(selectedContext.planName),          
-            duration_label: String(selectedContext.durationLabel)
+            duration_label: String(selectedContext.durationLabel),
+            ...(urlToUse ? { esign_url: String(urlToUse) } : {})
           }).toString();
 
           router.push(`/pages/subscription/RazorpayWebView?${params}` as any);
@@ -408,7 +548,8 @@ export default function PricingPlans() {
         amount: String(getFinalPrice()),
         coupon_code: appliedCoupon || '',
         plan_name: String(selectedContext.planName),
-        duration_label: String(selectedContext.durationLabel)
+        duration_label: String(selectedContext.durationLabel),
+        ...(urlToUse ? { esign_url: String(urlToUse) } : {})
       }).toString();
 
       router.push(`/pages/subscription/ManualQRUpload?${params}` as any);
@@ -441,6 +582,17 @@ export default function PricingPlans() {
       }
     }
   }
+
+  /* --- Render Helpers --- */
+  const getButtonText = () => {
+    if (isAgreementSigned) {
+      return paymentMethod === 'online' ? 'Proceed to Pay' : 'Scan to Pay';
+    }
+    if (draftAgreementId && activeEsignUrl) {
+      return 'Resume Signing';
+    }
+    return 'Proceed to Agreement';
+  };
 
   /* --- Render --- */
 
@@ -584,23 +736,16 @@ export default function PricingPlans() {
                       <Text style={styles.totalAmount}>₹{getFinalPrice()}</Text>
                     </View>
 
-                    <AgreementCheckbox 
-                      isChecked={isAgreementChecked} 
-                      onToggle={setIsAgreementChecked} 
-                    />
-
                     <TouchableOpacity
-                      style={[styles.payNowBtn, !isAgreementChecked && { backgroundColor: '#9CA3AF', shadowOpacity: 0 }]}
+                      style={[styles.payNowBtn, checkingExisting && { opacity: 0.7 }]}
                       onPress={handleProceedClick}
-                      disabled={processingPayment || !isAgreementChecked}
+                      disabled={processingPayment || checkingExisting}
                       activeOpacity={0.8}
                     >
-                      {processingPayment ? (
+                      {checkingExisting ? (
                         <ActivityIndicator color="#fff" />
                       ) : (
-                        <Text style={styles.payNowBtnText}>
-                          {isAgreementSigned ? (paymentMethod === 'online' ? 'Proceed to Pay' : 'Scan to Pay') : 'Proceed to Agreement'}
-                        </Text>
+                        <Text style={styles.payNowBtnText}>{getButtonText()}</Text>
                       )}
                     </TouchableOpacity>
 
@@ -618,7 +763,7 @@ export default function PricingPlans() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* ---------------- LEGAL AGREEMENT MODAL ---------------- */}
+      {/* ---------------- LEGAL AGREEMENT PREVIEW MODAL ---------------- */}
       <AgreementDocumentModal 
         visible={isAgreementVisible}
         onClose={() => setIsAgreementVisible(false)}
@@ -635,6 +780,37 @@ export default function PricingPlans() {
         aadhaarNumber={extractedAadhaar}
         signatureUrl={extractedSignatureUrl}
       />
+
+      {/* ---------------- ESIGN WEBVIEW MODAL ---------------- */}
+      <Modal
+        visible={esignWebViewVisible}
+        animationType="slide"
+        onRequestClose={verifyWebViewStatus}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={styles.webviewHeader}>
+            <Text style={styles.webviewTitle}>Digital Signature (Digio)</Text>
+            <TouchableOpacity onPress={verifyWebViewStatus}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+          
+          {activeEsignUrl && (
+            <WebView
+              source={{ uri: activeEsignUrl }}
+              style={{ flex: 1 }}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              startInLoadingState={true}
+              onNavigationStateChange={(navState) => {
+                if (navState.url.includes('subscribe/confirm')) {
+                  verifyWebViewStatus();
+                }
+              }}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
 
     </OtherPagesInc>
   );
@@ -700,4 +876,6 @@ const styles = StyleSheet.create({
   payNowBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   secureBadge: { flexDirection: 'row', justifyContent: 'center', marginTop: 16, alignItems: 'center' },
   secureText: { fontSize: 11, color: '#6B7280' },
+  webviewHeader: { flexDirection: 'row', padding: 16, backgroundColor: '#f8fafc', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  webviewTitle: { fontSize: 16, fontWeight: 'bold', color: '#333' }
 });

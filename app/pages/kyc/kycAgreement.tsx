@@ -19,7 +19,7 @@ import { useRouter, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 
 import customerProfileServices from '@/services/api/methods/profileService';
-import kycService from '@/services/api/methods/kycService'; // adjust if your filename is kycService.ts
+import kycService from '@/services/api/methods/kycService'; 
 
 export default function KycAgreementPage() {
   const router = useRouter();

@@ -161,14 +161,14 @@ export default function PaymentAndInvoices() {
             <Ionicons name="chevron-forward" size={16} color="#000" />
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             style={styles.linkRow}
             onPress={() => router.push('/pages/settingsInnerPages/legalDisclaimer')}
           >
             <Feather name="file-text" size={20} color="#000" style={styles.icon} />
             <Text style={styles.linkText}>Legal Disclaimer</Text>
             <Ionicons name="chevron-forward" size={16} color="#000" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           {isActive && (
             <View style={styles.reminderSection}>

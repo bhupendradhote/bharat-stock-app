@@ -40,7 +40,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
     phone: '',
     email: '',
     status: 'Active',
-    plan: 'Free Tier' // Added plan field
+    // plan: 'Free Tier' // Added plan field
   });
 
   const [profileImage, setProfileImage] = useState(DEFAULT_IMAGE);
@@ -83,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
             phone: user.phone || '',
             email: user.email || '',
             status: user.status || 'Active',
-            plan: planName // Set dynamic plan
+            // plan: planName // Set dynamic plan
           });
 
           // --- Extract Profile Image ---
@@ -233,10 +233,10 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
                 </View>
 
                 {/* Dynamic Plan Name */}
-                <View style={styles.infoRow}>
+                {/* <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Plan: </Text>
                   <Text style={styles.infoValue}>{userData.plan}</Text>
-                </View>
+                </View> */}
               </View>
 
               <TouchableOpacity style={styles.ctaButton} onPress={() => {

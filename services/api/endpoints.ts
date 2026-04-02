@@ -80,9 +80,20 @@ export const API_ENDPOINTS = {
   },
 
   // KYC Endpoints (auth:sanctum)
-  KYC: {
-    START: '/kyc/start',
-    STATUS: '/kyc/status',
+ KYC: {
+  START: '/kyc/start',
+  STATUS: '/kyc/status',
+  MEDIA: '/kyc/media',        
+  CALLBACK: '/kyc/callback', 
+},
+
+  // Agreements Endpoints (auth:sanctum)
+  AGREEMENTS: {
+    CREATE_DRAFT: '/agreements/draft',
+    GET_DRAFTS: '/agreements/drafts',
+    STATUS: (id: number | string) => `/agreements/drafts/${id}/status`,
+    MANUAL_PAYMENT: '/agreements/manual-payment',
+    LIST: '/agreements/list', // NEW ENDPOINT ADDED HERE
   },
 
   // Mobile Subscription & Razorpay (auth:sanctum)

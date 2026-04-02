@@ -141,7 +141,7 @@ const SettingsPage = () => {
       icon: 'file-text-o',
       text: 'KYC & Agreement',
       type: 'fontAwesome',
-      route: '/pages/kyc/kycAgreement',
+      route: '/pages/kyc/agreementList',
     },
     { id: 3,
       icon: 'help-circle-outline', 
@@ -270,7 +270,7 @@ const SettingsPage = () => {
 
         {/* --- Plan Section --- */}
         <View style={styles.planSection}>
-          <View style={styles.planHeaderRow}>
+          {/* <View style={styles.planHeaderRow}>
             <Text style={styles.sectionHeading}>Current Plan</Text>
             <Text style={styles.planName}>{planName}</Text>
           </View>
@@ -282,7 +282,7 @@ const SettingsPage = () => {
           <View style={styles.planDetailRow}>
             <Text style={styles.planLabel}>End Date</Text>
             <Text style={styles.planValue}>{validityEnd}</Text>
-          </View>
+          </View> */}
           
           <View style={styles.planDetailRow}>
             <Text style={styles.planLabel}>KYC Status</Text>

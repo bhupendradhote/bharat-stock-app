@@ -337,8 +337,6 @@ const AgreementDocumentModal: React.FC<AgreementProps> = ({
                   <View style={styles.imageWrapper}>
                     <Image 
                       key={signatureUrl}
-                      // Use the dynamic variable, or if you want to hardcode for a test, 
-                      // make sure it is exactly "https://..." without the 'r'
                       source={{ uri: signatureUrl }} 
                       style={styles.signatureImage}
                       resizeMode="contain"
@@ -360,7 +358,7 @@ const AgreementDocumentModal: React.FC<AgreementProps> = ({
                     <Image 
                       key={signatureUrl}
                       source={{ 
-                        uri: "rhttps://bharatstockmarketresearch.com/storage/248/selfie_FIL260326103220804QEOUP2NLEQ5LBU.jpg",
+                        uri: "https://bharatstockmarketresearch.com/storage/248/selfie_FIL260326103220804QEOUP2NLEQ5LBU.jpg",
                         headers: {
                           Accept: 'image/*',
                         },
@@ -431,9 +429,9 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 14, fontWeight: '900', textTransform: 'uppercase' },
   headerSub: { color: '#7dd3fc', fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
   closeBtn: { padding: 4 },
-  scrollView: { flex: 1, padding: 16 },
+  scrollView: { flex: 1, padding: 6 },
   scrollContent: { paddingBottom: 40 },
-  documentPaper: { backgroundColor: '#fff', padding: 24, borderRadius: 16, borderWidth: 1, borderColor: '#cbd5e1', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
+  documentPaper: { backgroundColor: '#fff', padding: 24, borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   docTracking: { alignItems: 'flex-end', marginBottom: 20 },
   trackingText: { fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
   sectionCenter: { alignItems: 'center', marginTop: 30, marginBottom: 20, borderTopWidth: 1, borderTopColor: '#e2e8f0', paddingTop: 30 },
@@ -464,11 +462,11 @@ const styles = StyleSheet.create({
     marginBottom: 8, 
     justifyContent: 'center', 
     alignItems: 'center',
-    backgroundColor: '#fff' // Helps visibility
+    backgroundColor: '#fff' 
   },
   signatureImage: { 
-    width: 160, // Fixed width
-    height: 80,  // Fixed height
+    width: 160, 
+    height: 80, 
   },
   noSignatureBox: { height: 60, justifyContent: 'center', alignItems: 'center' },
   signatureLine: { width: 180, height: 1, backgroundColor: '#334155', marginBottom: 6 },
