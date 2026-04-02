@@ -36,7 +36,7 @@ export interface ApplyCouponResponse {
   message: string;
   original_price: string;
   discount: string;
-  final_price: string;
+  final_price: number;
   coupon: {
     code: string;
     type: string;

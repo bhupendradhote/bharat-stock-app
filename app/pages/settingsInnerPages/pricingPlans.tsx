@@ -229,7 +229,7 @@ export default function PricingPlans() {
   };
 
   /* --- 2. Modal Setup (Instant Open) --- */
-  const openCheckoutModal = (plan: UIPricingPlan, durationIndex: number) => {
+  const openCheckoutModal = async (plan: UIPricingPlan, durationIndex: number) => {
     const duration = plan.durations[durationIndex];
     if (!duration) return;
 
@@ -257,6 +257,33 @@ export default function PricingPlans() {
     });
     
     setModalVisible(true);
+
+    // Silent background check for existing draft to lock the coupon section if already signed
+    try {
+      const draftsResp = await AgreementService.getDrafts();
+      if (draftsResp && draftsResp.success && draftsResp.data) {
+        const validDraft = draftsResp.data.find((d: any) => 
+          d.plan.id === Number(plan.id) && 
+          d.duration.id === duration.id
+        );
+
+        if (validDraft && (validDraft.esign?.status === 'signed' || validDraft.esign?.is_signed)) {
+          setIsAgreementSigned(true);
+          setDraftAgreementId(validDraft.id);
+          
+          if (validDraft.pricing?.coupon_applied && validDraft.pricing?.coupon?.code) {
+            setAppliedCoupon(validDraft.pricing.coupon.code);
+            setDiscountDetails({
+              success: true,
+              discount: validDraft.pricing.amount ? (duration.price - validDraft.pricing.amount) : 0,
+              final_price: validDraft.pricing.amount
+            } as any);
+          }
+        }
+      }
+    } catch (err) {
+      console.log("Silent draft check failed:", err);
+    }
   };
 
   const closeCheckoutModal = () => {
@@ -302,13 +329,33 @@ export default function PricingPlans() {
 
   /* --- 4. Calculation Helper --- */
   const getFinalPrice = (): number => {
-    if (discountDetails?.final_price) return Number(discountDetails.final_price);
-    return Number(selectedContext?.originalPrice ?? 0);
+    // Ensure original price is safely parsed
+    const rawOriginal = String(selectedContext?.originalPrice ?? 0);
+    const original = Number(rawOriginal.replace(/[^0-9.-]+/g, ""));
+    const safeOriginal = isNaN(original) ? 0 : original;
+
+    if (discountDetails) {
+      // 1. Try to use the explicit final_price from the API if it exists
+      if (discountDetails.final_price !== undefined && discountDetails.final_price !== null) {
+        const parsedFinal = Number(String(discountDetails.final_price).replace(/[^0-9.-]+/g, ""));
+        if (!isNaN(parsedFinal)) return parsedFinal;
+      }
+      
+      // 2. Fallback: Manually calculate if final_price is missing but we have a discount
+      const discountAmount = getDiscountAmount();
+      return Math.max(0, safeOriginal - discountAmount);
+    }
+    
+    return safeOriginal;
   };
-  
+
   const getDiscountAmount = (): number => {
-     if (discountDetails?.discount) return Number(discountDetails.discount);
-     return 0;
+    if (discountDetails && discountDetails.discount !== undefined && discountDetails.discount !== null) {
+      // Strips commas, currency symbols, and any non-numeric characters before parsing
+      const parsedDiscount = Number(String(discountDetails.discount).replace(/[^0-9.-]+/g, ""));
+      if (!isNaN(parsedDiscount)) return parsedDiscount;
+    }
+    return 0;
   };
 
   /* --- 5. Flow Navigation Logic (ON CLICK) --- */
@@ -655,41 +702,45 @@ export default function PricingPlans() {
                       </View>
                     </View>
 
-                    <View style={styles.modalCouponContainer}>
-                      <Text style={styles.modalSectionTitle}>Have a Coupon?</Text>
-                      <View style={styles.couponRow}>
-                        <TextInput
-                          placeholder="Enter Code"
-                          value={couponInput}
-                          onChangeText={setCouponInput}
-                          autoCapitalize="characters"
-                          style={[styles.couponInput, appliedCoupon && { backgroundColor: '#ECFDF5', borderColor: '#059669' }]}
-                          editable={!appliedCoupon && !validatingCoupon}
-                        />
-                        <TouchableOpacity
-                          style={[
-                              styles.applyBtn, 
-                              appliedCoupon ? { backgroundColor: '#DC2626' } : {},
-                              (!couponInput && !appliedCoupon) ? { backgroundColor: '#9CA3AF' } : {}
-                          ]}
-                          onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
-                          disabled={validatingCoupon || (!couponInput && !appliedCoupon)}
-                        >
-                          {validatingCoupon ? (
-                            <ActivityIndicator size="small" color="#fff" />
-                          ) : (
-                            <Text style={styles.applyBtnText}>{appliedCoupon ? 'Remove' : 'Apply'}</Text>
+                    {/* HIDE COUPON SECTION IF AGREEMENT IS ALREADY SIGNED */}
+                    {!isAgreementSigned && (
+                      <>
+                        <View style={styles.modalCouponContainer}>
+                          <Text style={styles.modalSectionTitle}>Have a Coupon?</Text>
+                          <View style={styles.couponRow}>
+                            <TextInput
+                              placeholder="Enter Code"
+                              value={couponInput}
+                              onChangeText={setCouponInput}
+                              autoCapitalize="characters"
+                              style={[styles.couponInput, appliedCoupon && { backgroundColor: '#ECFDF5', borderColor: '#059669' }]}
+                              editable={!appliedCoupon && !validatingCoupon}
+                            />
+                            <TouchableOpacity
+                              style={[
+                                  styles.applyBtn, 
+                                  appliedCoupon ? { backgroundColor: '#DC2626' } : {},
+                                  (!couponInput && !appliedCoupon) ? { backgroundColor: '#9CA3AF' } : {}
+                              ]}
+                              onPress={appliedCoupon ? removeCoupon : handleApplyCoupon}
+                              disabled={validatingCoupon || (!couponInput && !appliedCoupon)}
+                            >
+                              {validatingCoupon ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                              ) : (
+                                <Text style={styles.applyBtnText}>{appliedCoupon ? 'Remove' : 'Apply'}</Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                          {appliedCoupon && (
+                            <Text style={styles.couponSuccessMsg}>
+                               Coupon applied! You saved ₹{getDiscountAmount()}
+                            </Text>
                           )}
-                        </TouchableOpacity>
-                      </View>
-                      {appliedCoupon && (
-                        <Text style={styles.couponSuccessMsg}>
-                           Coupon applied! You saved ₹{getDiscountAmount()}
-                        </Text>
-                      )}
-                    </View>
-
-                    <View style={styles.divider} />
+                        </View>
+                        <View style={styles.divider} />
+                      </>
+                    )}
 
                     <View style={styles.paymentMethodSection}>
                       <Text style={styles.modalSectionTitle}>Payment Method</Text>
