@@ -119,7 +119,7 @@ export default function KycAgreementPage() {
 
         <View style={styles.divider} />
 
-        <View style={styles.detailsRow}>
+        {/* <View style={styles.detailsRow}>
           <View style={styles.detailCol}>
             <Text style={styles.detailLabel}>Invoice Amount</Text>
             <Text style={styles.detailValue}>{amount}</Text>
@@ -130,7 +130,7 @@ export default function KycAgreementPage() {
               {item.plan?.plan_id ? 'Standard Plan' : 'Custom'}
             </Text>
           </View>
-        </View>
+        </View> */}
 
         <TouchableOpacity
           style={[styles.pdfButton, !item.pdf?.url && styles.pdfButtonDisabled]}

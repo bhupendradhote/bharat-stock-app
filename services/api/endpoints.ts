@@ -96,12 +96,13 @@ export const API_ENDPOINTS = {
     LIST: '/agreements/list', // NEW ENDPOINT ADDED HERE
   },
 
-  // Mobile Subscription & Razorpay (auth:sanctum)
+// Mobile Subscription & Razorpay (auth:sanctum)
   SUBSCRIPTION: {
     BASE: '/mobile/subscription',
     PLANS: '/mobile/subscription/plans',
     COUPONS: '/mobile/subscription/coupons',
     APPLY_COUPON: '/mobile/subscription/apply-coupon',
+    CHECK_LOCK: (planId: number | string, durationId: number | string) => `/mobile/subscription/check-lock/${planId}/${durationId}`, // ✨ NEW ENDPOINT ADDED HERE
     RAZORPAY: {
       INITIATE: '/mobile/subscription/razorpay/initiate',
       VERIFY: '/mobile/subscription/razorpay/verify',

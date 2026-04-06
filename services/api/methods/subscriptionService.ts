@@ -2,7 +2,7 @@ import apiClient from '../apiClient';
 import { API_ENDPOINTS } from '../endpoints';
 
 /* -------------------------------------------------------------------------- */
-/* INTERFACES                                 */
+/* INTERFACES                                                                 */
 /* -------------------------------------------------------------------------- */
 
 export interface SubscriptionPlan {
@@ -91,31 +91,34 @@ export interface Invoice {
   };
 }
 
+export interface CheckLockResponse {
+  success: boolean;
+  is_locked: boolean;
+  can_pay: boolean;
+  status: string;
+  message: string;
+  user?: {
+    id: number;
+    name: string;
+  };
+}
+
 /* -------------------------------------------------------------------------- */
-/* SERVICE METHODS                               */
+/* SERVICE METHODS                                                            */
 /* -------------------------------------------------------------------------- */
 
 const subscriptionService = {
-  /**
-   * 1️⃣ GET PLANS
-   */
+
   getPlans: async (): Promise<{ success: boolean; plans: SubscriptionPlan[]; kyc_status: string }> => {
     const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.PLANS);
     return response.data;
   },
 
-  /**
-   * 2️⃣ GET ALL AVAILABLE COUPONS
-   */
   getCoupons: async (): Promise<{ success: boolean; data: Coupon[] }> => {
     const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.COUPONS);
     return response.data;
   },
 
-  /**
-   * 3️⃣ APPLY COUPON
-   * Note: Backend expects duration_id
-   */
   applyCoupon: async (
     code: string,
     durationId: number
@@ -127,10 +130,6 @@ const subscriptionService = {
     return response.data;
   },
 
-  /**
-   * 4️⃣ INITIATE RAZORPAY ORDER
-   * Note: Includes optional coupon_code as per your backend controller
-   */
   initiateRazorpay: async (
     planId: number,
     durationId: number,
@@ -144,10 +143,6 @@ const subscriptionService = {
     return response.data;
   },
 
-  /**
-   * 5️⃣ VERIFY RAZORPAY PAYMENT
-   * Required fields: order_id, payment_id, signature, plan_id, duration_id
-   */
   verifyRazorpay: async (
     payload: RazorpayVerifyPayload
   ): Promise<{ success: boolean; subscription_id: number; invoice_number: string; message?: string }> => {
@@ -155,28 +150,16 @@ const subscriptionService = {
     return response.data;
   },
 
-  /**
-   * 6️⃣ CURRENT SUBSCRIPTION
-   */
   getCurrentSubscription: async (): Promise<CurrentSubscription> => {
     const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.CURRENT);
     return response.data;
   },
 
-  /**
-   * 7️⃣ INVOICE LIST
-   */
-  // services/api/methods/subscriptionService.ts
+  getInvoices: async (): Promise<{ success: boolean; data: Invoice[] }> => {
+    const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.INVOICES.LIST);
+    return response.data;
+  },
 
-getInvoices: async (): Promise<{ success: boolean; data: Invoice[] }> => {
-  // Ensure API_ENDPOINTS.SUBSCRIPTION.INVOICES.LIST matches your Laravel route
-  // Typically: /api/subscription/invoices
-  const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.INVOICES.LIST);
-  return response.data;
-},
-  /**
-   * 8️⃣ DOWNLOAD INVOICE (BLOB)
-   */
   downloadInvoice: async (invoiceId: number | string): Promise<Blob> => {
     const response = await apiClient.get(
       API_ENDPOINTS.SUBSCRIPTION.INVOICES.DOWNLOAD(invoiceId),
@@ -185,15 +168,20 @@ getInvoices: async (): Promise<{ success: boolean; data: Invoice[] }> => {
     return response.data;
   },
 
-  /**
-   * 9️⃣ GET INVOICE DOWNLOAD URL (from backend route)
-   */
   getInvoiceDownloadUrl: async (invoiceId: number | string): Promise<{ success: boolean; download_url: string }> => {
     const response = await apiClient.get(API_ENDPOINTS.SUBSCRIPTION.INVOICES.DOWNLOAD(invoiceId));
     return response.data;
   },
 
-
+  checkLock: async (
+    planId: number | string, 
+    durationId: number | string
+  ): Promise<CheckLockResponse> => {
+    const response = await apiClient.get(
+      API_ENDPOINTS.SUBSCRIPTION.CHECK_LOCK(planId, durationId)
+    );
+    return response.data;
+  },
 };
 
 export default subscriptionService;
